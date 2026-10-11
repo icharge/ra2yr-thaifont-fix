@@ -1,0 +1,24 @@
+# Upstream source is a separate checkout; our integration changes live in patches/.
+/ts-ddraw-upstream/
+
+# Local build output and reverse-engineering workspaces.
+/build-*/
+/ghidra-analysis/
+/ghidra-user/
+/__pycache__/
+*.py[cod]
+
+# Locally built binaries and diagnostics.
+/ddraw-integrated.dll
+*.log
+*.pdb
+*.obj
+*.exp
+*.lib
+*.ilk
+
+# Compiled legacy proxy artifacts; keep their source and README.
+/legacy-proxies/*.dll
+/legacy-proxies/*.lib
+/legacy-proxies/*.pdb
+/legacy-proxies/*.exp

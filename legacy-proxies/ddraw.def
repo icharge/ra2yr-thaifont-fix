@@ -1,0 +1,24 @@
+LIBRARY ddraw
+EXPORTS
+    AcquireDDThreadLock=_Proxy_AcquireDDThreadLock@0 @1
+    CompleteCreateSysmemSurface=_Proxy_CompleteCreateSysmemSurface@0 @2
+    D3DParseUnknownCommand=_Proxy_D3DParseUnknownCommand@0 @3
+    DDGetAttachedSurfaceLcl=_Proxy_DDGetAttachedSurfaceLcl@0 @4
+    DDInternalLock=_Proxy_DDInternalLock@0 @5
+    DDInternalUnlock=_Proxy_DDInternalUnlock@0 @6
+    DSoundHelp=_Proxy_DSoundHelp@0 @7
+    DirectDrawCreate=_Proxy_DirectDrawCreate@0 @8
+    DirectDrawCreateClipper=_Proxy_DirectDrawCreateClipper@0 @9
+    DirectDrawCreateEx=_Proxy_DirectDrawCreateEx@0 @10
+    DirectDrawEnumerateA=_Proxy_DirectDrawEnumerateA@0 @11
+    DirectDrawEnumerateExA=_Proxy_DirectDrawEnumerateExA@0 @12
+    DirectDrawEnumerateExW=_Proxy_DirectDrawEnumerateExW@0 @13
+    DirectDrawEnumerateW=_Proxy_DirectDrawEnumerateW@0 @14
+    DllCanUnloadNow=_Proxy_DllCanUnloadNow@0 @15
+    DllGetClassObject=_Proxy_DllGetClassObject@0 @16
+    GetDDSurfaceLocal=_Proxy_GetDDSurfaceLocal@0 @17
+    GetOLEThunkData=_Proxy_GetOLEThunkData@0 @18
+    GetSurfaceFromDC=_Proxy_GetSurfaceFromDC@0 @19
+    RegisterSpecialCase=_Proxy_RegisterSpecialCase@0 @20
+    ReleaseDDThreadLock=_Proxy_ReleaseDDThreadLock@0 @21
+    SetAppCompatData=_Proxy_SetAppCompatData@0 @22

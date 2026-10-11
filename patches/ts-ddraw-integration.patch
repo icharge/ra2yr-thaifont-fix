@@ -1,0 +1,54 @@
+diff --git a/ddraw.rc b/ddraw.rc
+index 79a71f8..59ccf07 100644
+--- a/ddraw.rc
++++ b/ddraw.rc
+@@ -1,4 +0,0 @@
+-#define vstr(v) vxstr(v)
+-#define vxstr(a,b,c,d) str(a##.##b##.##c##.##d)
+-#define str(s) #s
+-
+@@ -16,2 +12,2 @@ PRODUCTVERSION VERSION
+-            VALUE "FileDescription", "DirectDraw replacement for Tiberian Sun and Red Alert 2"
+-            VALUE "FileVersion", vstr(VERSION)
++            VALUE "FileDescription", "TS-DDraw with Thai bitmap-font mark placement fix"
++            VALUE "FileVersion", "1.1.4.15"
+@@ -22,3 +18,3 @@ PRODUCTVERSION VERSION
+-            VALUE "ProductName", "DirectDraw replacement for Tiberian Sun and Red Alert 2"
+-            VALUE "ProductVersion", "TS-DDraw OpenGL/GDI"
+-            VALUE "Comments", "https://cncnet.org"
++            VALUE "ProductName", "TS-DDraw with ThaiFontFix"
++            VALUE "ProductVersion", "TS-DDraw OpenGL/GDI + ThaiFontFix 1.0"
++            VALUE "Comments", "Thai combining-mark placement integrated into DirectDrawCreate"
+diff --git a/src/main.c b/src/main.c
+index c01e2db..51aea1e 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -21,0 +22,4 @@
++#ifdef THAI_FONT_FIX_INTEGRATED
++extern void __cdecl ThaiFontFixInitialize(void);
++#endif
++
+@@ -107,0 +112,3 @@ HRESULT WINAPI DirectDrawCreate(GUID FAR* lpGUID, LPDIRECTDRAW FAR* lplpDD, IUnk
++#ifdef THAI_FONT_FIX_INTEGRATED
++    ThaiFontFixInitialize();
++#endif
+diff --git a/ts-ddraw.vcxproj b/ts-ddraw.vcxproj
+index 877659f..dcaba18 100644
+--- a/ts-ddraw.vcxproj
++++ b/ts-ddraw.vcxproj
+@@ -22,0 +23 @@
++    <ClCompile Include="..\ThaiFontFix.cpp" />
+@@ -87 +88 @@
+-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;THAI_FONT_FIX_INTEGRATED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+@@ -108,0 +110 @@ if exist "$(LocalDebuggerCommand)" if exist "$(LocalDebuggerWorkingDirectory)"
++      <DebugInformationFormat>None</DebugInformationFormat>
+@@ -112 +114 @@ if exist "$(LocalDebuggerCommand)" if exist "$(LocalDebuggerWorkingDirectory)"
+-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;THAI_FONT_FIX_INTEGRATED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+@@ -117,0 +120 @@ if exist "$(LocalDebuggerCommand)" if exist "$(LocalDebuggerWorkingDirectory)"
++      <GenerateDebugInformation>false</GenerateDebugInformation>
+@@ -127 +130 @@ if exist "$(LocalDebuggerCommand)" if exist "$(LocalDebuggerWorkingDirectory)"
+-</Project>
+\ No newline at end of file
++</Project>

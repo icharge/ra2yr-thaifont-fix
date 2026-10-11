@@ -1,0 +1,7 @@
+LIBRARY winmm
+EXPORTS
+    timeBeginPeriod=_Proxy_timeBeginPeriod@0 @147
+    timeEndPeriod=_Proxy_timeEndPeriod@0 @148
+    timeGetTime=_Proxy_timeGetTime@0 @151
+    timeKillEvent=_Proxy_timeKillEvent@0 @152
+    timeSetEvent=_Proxy_timeSetEvent@0 @153
