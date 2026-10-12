@@ -1,0 +1,37 @@
+#include <windows.h>
+
+#if defined(THAI_FONT_SYRINGE_RA2)
+#define THAI_FONT_FILE_DESCRIPTION "ThaiFontFix Syringe Extension for Red Alert 2\0"
+#define THAI_FONT_ORIGINAL_FILENAME "ThaiFontFixSyringe-RA2.dll\0"
+#else
+#define THAI_FONT_FILE_DESCRIPTION "ThaiFontFix Syringe Extension for Yuri's Revenge\0"
+#define THAI_FONT_ORIGINAL_FILENAME "ThaiFontFixSyringe-YR.dll\0"
+#endif
+
+1 VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "Comments", "Thai CP874 bitmap-font mark placement fix loaded by Ares Syringe.\0"
+            VALUE "FileDescription", THAI_FONT_FILE_DESCRIPTION
+            VALUE "FileVersion", "1.0.0.0\0"
+            VALUE "InternalName", "ThaiFontFixSyringe\0"
+            VALUE "OriginalFilename", THAI_FONT_ORIGINAL_FILENAME
+            VALUE "ProductName", "ThaiFontFix for Red Alert 2 and Yuri's Revenge\0"
+            VALUE "ProductVersion", "1.0.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

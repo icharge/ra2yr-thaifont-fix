@@ -52,3 +52,9 @@ index 877659f..dcaba18 100644
 -</Project>
 \ No newline at end of file
 +</Project>
+diff --git a/ddraw.def b/ddraw.def
+index 9b77e58..8ad1d23 100644
+--- a/ddraw.def
++++ b/ddraw.def
+@@ -4,0 +5 @@
++    ThaiFontFixIsActive=_ThaiFontFixIsActive@0 @500

@@ -18,10 +18,6 @@ static volatile LONG g_winmmInit;
 static FARPROC g_winmmForwarders[5];
 #elif defined(THAI_FONT_FIX_INTEGRATED)
 // The integrated TS-DDraw build has no proxy state.
-#else
-static HMODULE g_systemVersion;
-static volatile LONG g_forwarderInit;
-static FARPROC g_forwarders[17];
 #endif
 
 struct FontFixConfig {
@@ -103,26 +99,6 @@ static const char* const kWinmmExportNames[5] = {
     "timeKillEvent",
     "timeSetEvent",
 };
-#elif !defined(THAI_FONT_FIX_INTEGRATED)
-static const char* const kExportNames[17] = {
-    "GetFileVersionInfoA",
-    "GetFileVersionInfoByHandle",
-    "GetFileVersionInfoExA",
-    "GetFileVersionInfoExW",
-    "GetFileVersionInfoSizeA",
-    "GetFileVersionInfoSizeExA",
-    "GetFileVersionInfoSizeExW",
-    "GetFileVersionInfoSizeW",
-    "GetFileVersionInfoW",
-    "VerFindFileA",
-    "VerFindFileW",
-    "VerInstallFileA",
-    "VerInstallFileW",
-    "VerLanguageNameA",
-    "VerLanguageNameW",
-    "VerQueryValueA",
-    "VerQueryValueW",
-};
 #endif
 
 struct FontState {
@@ -168,6 +144,7 @@ static FontState* g_fontStates;
 static LayoutContext* g_currentContext;
 
 static BOOL InstallFontHooks(void);
+static BOOL IsOtherThaiFontFixActive(void);
 
 typedef int (__thiscall* RenderFunction)(void*, unsigned short, int, int, int);
 typedef int (__stdcall* LayoutFunction)(void*, void*, short*, int, int, int, int, int, int, int);
@@ -355,26 +332,11 @@ static BOOL TryLoadMatchingGameFntRecords(WORD* runtimeMap, DWORD height, DWORD 
 }
 
 static BOOL GetProxyConfigurationPath(char* path, SIZE_T capacity) {
-    if (path == NULL || capacity == 0 || g_selfModule == NULL) return FALSE;
-    DWORD length = GetModuleFileNameA(g_selfModule, path, (DWORD)capacity);
-    if (length == 0 || length >= capacity) return FALSE;
-
-    SIZE_T fileNameStart = length;
-    while (fileNameStart != 0 && path[fileNameStart - 1] != '\\' && path[fileNameStart - 1] != '/') {
-        --fileNameStart;
-    }
-
-    SIZE_T baseEnd = length;
-    for (SIZE_T i = length; i > fileNameStart; --i) {
-        if (path[i - 1] == '.') {
-            baseEnd = i - 1;
-            break;
-        }
-    }
-
-    path[baseEnd] = 0;
-    length = baseEnd;
-    return AppendText(path, capacity, &length, "-thaifnt.ini");
+    if (path == NULL || capacity == 0) return FALSE;
+    path[0] = 0;
+    if (!GetProxyDirectory(path, capacity)) return FALSE;
+    SIZE_T length = (SIZE_T)lstrlenA(path);
+    return AppendText(path, capacity, &length, "thaifontfix.ini");
 }
 
 static void WriteDebugDiagnostic(const char* message) {
@@ -510,14 +472,19 @@ static void EnsureRuntimeInitialized(void) {
     LONG state = InterlockedCompareExchange(&g_runtimeInit, 1, 0);
     if (state == 0) {
         LoadConfiguration();
-        if (InitializeCriticalSectionAndSpinCount(&g_fontLock, 2000)) {
+        if (!g_config.enabled) {
+            WriteDebugDiagnostic("ThaiFontFix: font hooks disabled by configuration");
+            g_runtimeReady = TRUE;
+        } else if (IsOtherThaiFontFixActive()) {
+            g_hooksInstalled = TRUE;
+            g_runtimeReady = TRUE;
+            WriteDebugDiagnostic("ThaiFontFix: another loader already installed the font hooks; duplicate installation skipped");
+        } else if (InitializeCriticalSectionAndSpinCount(&g_fontLock, 2000)) {
             if (g_config.enabled) {
                 g_hooksInstalled = InstallFontHooks();
                 WriteDebugDiagnostic(g_hooksInstalled
                     ? "ThaiFontFix: font hooks installed"
                     : "ThaiFontFix: font hooks were not installed");
-            } else {
-                WriteDebugDiagnostic("ThaiFontFix: font hooks disabled by configuration");
             }
             g_runtimeReady = TRUE;
         } else {
@@ -527,6 +494,28 @@ static void EnsureRuntimeInitialized(void) {
         return;
     }
     while (InterlockedCompareExchange(&g_runtimeInit, 2, 2) != 2) Sleep(0);
+}
+
+static BOOL IsOtherThaiFontFixActive(void) {
+    static const char* const moduleNames[] = {
+        "ddraw.dll",
+        "binkw32.dll",
+        "ThaiFontFix-Syringe-RA2.dll",
+        "ThaiFontFix-Syringe-YR.dll",
+    };
+    typedef BOOL (WINAPI* IsActiveFunction)(void);
+
+    for (unsigned i = 0; i < sizeof(moduleNames) / sizeof(moduleNames[0]); ++i) {
+        HMODULE module = GetModuleHandleA(moduleNames[i]);
+        if (module == NULL || module == g_selfModule) continue;
+        IsActiveFunction isActive = (IsActiveFunction)GetProcAddress(module, "ThaiFontFixIsActive");
+        if (isActive != NULL && isActive()) return TRUE;
+    }
+    return FALSE;
+}
+
+extern "C" BOOL WINAPI ThaiFontFixIsActive(void) {
+    return g_hooksInstalled;
 }
 
 #if defined(THAI_FONT_FIX_INTEGRATED)
@@ -722,7 +711,7 @@ static FontState* CreateFontState(void* font) {
 
         for (unsigned row = 0; row < 16; ++row) {
             const BYTE* bits = record + 1 + row * 3;
-            for (unsigned x = width; x < width + 8; ++x) {
+            for (unsigned x = width; x < (unsigned)width + 8u; ++x) {
                 BYTE mask = (BYTE)(0x80u >> (x & 7));
                 if ((bits[x >> 3] & mask) != 0) {
                     unsigned paddingColumns = x - width;
@@ -1385,65 +1374,6 @@ WINMM_PROXY(timeGetTime, 2, 8)
 WINMM_PROXY(timeKillEvent, 3, 12)
 WINMM_PROXY(timeSetEvent, 4, 16)
 
-#elif !defined(THAI_FONT_PROXY_DDRAW) && !defined(THAI_FONT_FIX_INTEGRATED)
-static void ResolveForwarder(unsigned index) {
-    EnsureRuntimeInitialized();
-    if (index >= 17) ExitProcess(ERROR_INVALID_PARAMETER);
-    if (g_forwarders[index] != NULL) return;
-
-    LONG state = InterlockedCompareExchange(&g_forwarderInit, 1, 0);
-    if (state == 0) {
-        char path[MAX_PATH];
-        UINT length = GetSystemDirectoryA(path, MAX_PATH);
-        if (length != 0 && length + 13 < MAX_PATH) {
-            path[length++] = '\\';
-            const char suffix[] = "version.dll";
-            for (unsigned i = 0; i < sizeof(suffix); ++i) path[length + i] = suffix[i];
-            g_systemVersion = LoadLibraryA(path);
-            if (g_systemVersion == g_selfModule) g_systemVersion = NULL;
-        }
-        InterlockedExchange(&g_forwarderInit, g_systemVersion != NULL ? 2 : 3);
-    } else {
-        while ((state = InterlockedCompareExchange(&g_forwarderInit, 2, 2)) == 1) Sleep(0);
-    }
-
-    if (g_systemVersion != NULL) {
-        FARPROC function = GetProcAddress(g_systemVersion, kExportNames[index]);
-        InterlockedCompareExchangePointer((PVOID volatile*)&g_forwarders[index], (PVOID)function, NULL);
-    }
-    if (g_forwarders[index] == NULL) ExitProcess(ERROR_MOD_NOT_FOUND);
-}
-
-#define VERSION_PROXY(name, slot, offset) \
-    extern "C" __declspec(naked) void WINAPI Proxy_##name(void) { \
-        __asm { pushfd } \
-        __asm { pushad } \
-        __asm { push slot } \
-        __asm { call ResolveForwarder } \
-        __asm { add esp, 4 } \
-        __asm { popad } \
-        __asm { popfd } \
-        __asm { jmp dword ptr [g_forwarders + offset] } \
-    }
-
-VERSION_PROXY(GetFileVersionInfoA, 0, 0)
-VERSION_PROXY(GetFileVersionInfoByHandle, 1, 4)
-VERSION_PROXY(GetFileVersionInfoExA, 2, 8)
-VERSION_PROXY(GetFileVersionInfoExW, 3, 12)
-VERSION_PROXY(GetFileVersionInfoSizeA, 4, 16)
-VERSION_PROXY(GetFileVersionInfoSizeExA, 5, 20)
-VERSION_PROXY(GetFileVersionInfoSizeExW, 6, 24)
-VERSION_PROXY(GetFileVersionInfoSizeW, 7, 28)
-VERSION_PROXY(GetFileVersionInfoW, 8, 32)
-VERSION_PROXY(VerFindFileA, 9, 36)
-VERSION_PROXY(VerFindFileW, 10, 40)
-VERSION_PROXY(VerInstallFileA, 11, 44)
-VERSION_PROXY(VerInstallFileW, 12, 48)
-VERSION_PROXY(VerLanguageNameA, 13, 52)
-VERSION_PROXY(VerLanguageNameW, 14, 56)
-VERSION_PROXY(VerQueryValueA, 15, 60)
-VERSION_PROXY(VerQueryValueW, 16, 64)
-
 #elif defined(THAI_FONT_PROXY_DDRAW)
 static BOOL IsAbsolutePathA(const char* path) {
     return path != NULL && ((path[0] != 0 && path[1] == ':') || path[0] == '\\' || path[0] == '/');
@@ -1554,6 +1484,53 @@ DDRAW_PROXY(RegisterSpecialCase, 19, 76)
 DDRAW_PROXY(ReleaseDDThreadLock, 20, 80)
 DDRAW_PROXY(SetAppCompatData, 21, 84)
 
+#endif
+
+#if defined(THAI_FONT_FIX_SYRINGE)
+struct SyringeHandshakeInfo {
+    int cbSize;
+    int num_hooks;
+    unsigned int checksum;
+    DWORD exeFilesize;
+    DWORD exeTimestamp;
+    unsigned int exeCRC;
+    int cchMessage;
+    char* Message;
+};
+
+static void SetSyringeHandshakeMessage(SyringeHandshakeInfo* info, const char* message) {
+    if (info == NULL || info->Message == NULL || info->cchMessage <= 0) return;
+    lstrcpynA(info->Message, message, info->cchMessage);
+}
+
+extern "C" HRESULT __cdecl SyringeHandshake(SyringeHandshakeInfo* info) {
+    if (info == NULL || info->cbSize < (int)sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
+
+#if defined(THAI_FONT_SYRINGE_RA2)
+    const BOOL supported = info->exeFilesize == 4485120u &&
+        info->exeTimestamp == 0x3b1ebbedu && info->exeCRC == 0xd33d92edu;
+    SetSyringeHandshakeMessage(info, supported
+        ? "ThaiFontFix Syringe hook: Red Alert 2 game.exe supported"
+        : "ThaiFontFix Syringe hook: target is not the supported Red Alert 2 game.exe");
+#elif defined(THAI_FONT_SYRINGE_YR)
+    const BOOL supported =
+        (info->exeFilesize == 4813072u && info->exeTimestamp == 0x3bdf544eu && info->exeCRC == 0x54cc0a13u) ||
+        (info->exeFilesize == 4818320u && info->exeTimestamp == 0x55fcd961u && info->exeCRC == 0xf9d60aaeu);
+    SetSyringeHandshakeMessage(info, supported
+        ? "ThaiFontFix Syringe hook: Yuri's Revenge game executable supported"
+        : "ThaiFontFix Syringe hook: target is not a supported Yuri's Revenge executable");
+#else
+    const BOOL supported = FALSE;
+    SetSyringeHandshakeMessage(info, "ThaiFontFix Syringe hook was built without a target executable");
+#endif
+
+    return supported ? S_OK : S_FALSE;
+}
+
+extern "C" DWORD __cdecl ThaiFontFixSyringeEntry(void*, void*) {
+    EnsureRuntimeInitialized();
+    return 0; // Syringe resumes the original executable entry point.
+}
 #endif
 
 #if !defined(THAI_FONT_FIX_INTEGRATED)

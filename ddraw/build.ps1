@@ -2,14 +2,15 @@ $ErrorActionPreference = 'Stop'
 
 $upstream = Join-Path $PSScriptRoot 'ts-ddraw-upstream'
 $project = Join-Path $upstream 'ts-ddraw.vcxproj'
+$sharedSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'shared\ThaiFontFix.cpp'
 $integrationPatch = Join-Path $PSScriptRoot 'patches\ts-ddraw-integration.patch'
-$buildRoot = Join-Path $PSScriptRoot 'build-msbuild-v143-no-pdb'
+$buildRoot = Join-Path $PSScriptRoot 'build-artifacts\msbuild-v143-no-pdb'
 $output = Join-Path $PSScriptRoot 'ddraw-integrated.dll'
 $msbuild = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe'
 $sdkVersion = '10.0.26100.0'
 $upstreamCommit = '5c1394b699fd9b6e37ab84b993cab147044b41a9'
 
-foreach ($path in @($project, $integrationPatch, $msbuild, (Join-Path $upstream 'ddraw.def'), (Join-Path $upstream 'ddraw.rc'))) {
+foreach ($path in @($project, $sharedSource, $integrationPatch, $msbuild, (Join-Path $upstream 'ddraw.def'), (Join-Path $upstream 'ddraw.rc'))) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Required TS-DDraw build path is missing: $path" }
 }
 

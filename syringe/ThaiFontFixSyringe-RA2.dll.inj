@@ -1,0 +1,3 @@
+; Red Alert 2 1.006 game.exe entry point: 0x00785AA0.
+; The entry prologue is 55 8B EC 6A FF, exactly five complete bytes.
+0x00785AA0 = ThaiFontFixSyringeEntry, 5

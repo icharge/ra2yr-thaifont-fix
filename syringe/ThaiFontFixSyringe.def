@@ -1,0 +1,4 @@
+EXPORTS
+    SyringeHandshake
+    ThaiFontFixSyringeEntry
+    ThaiFontFixIsActive=_ThaiFontFixIsActive@0

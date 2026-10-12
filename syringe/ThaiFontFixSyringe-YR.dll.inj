@@ -1,0 +1,3 @@
+; Yuri's Revenge supported game executables share entry point 0x007CD80F.
+; The entry prologue is 55 8B EC 6A FF, exactly five complete bytes.
+0x007CD80F = ThaiFontFixSyringeEntry, 5
