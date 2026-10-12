@@ -2,13 +2,29 @@
 
 This integration uses the game's `BINKW32.DLL` import as an app-local loader point. It does not replace DirectDraw and can coexist with CnCNet's renderer selection, the DDraw integration, and Syringe. The Bink proxy starts the shared Thai font hooks on a worker thread after DLL load, and forwards every export from the installed original Bink DLL.
 
-The installer renames the original game DLL to lowercase `binkw32.bin` and installs lowercase `binkw32.dll` as the proxy. The proxy loads the `.bin` file by its full path. Only those two Bink files are left in the game folder; installation does not create proxy-copy or SHA-256 sidecar files. Restoring puts the original DLL back under `binkw32.dll`.
+The installer renames the original game DLL to lowercase `binkw32.bin` and installs lowercase `binkw32.dll` as the proxy. The installer package stores the proxy under that same game loader filename. The proxy loads the `.bin` file by its full path. Only those two Bink files are left in the game folder; installation does not create proxy-copy or SHA-256 sidecar files. Restoring puts the original DLL back under `binkw32.dll`.
 
 ## Build and install
 
+### One-file NSIS installer
+
+Install NSIS 3.x (the `makensis.exe` command), then build the standalone installer from the repository root:
+
+```powershell
+.\bink\installer\build-installer.ps1
+```
+
+The script rebuilds the proxy for the selected game installation and packages the proxy and default INI into `bink/installer/ThaiFontFix-Setup.exe`. Pass `-NsisPath <path-to-makensis.exe>` if NSIS is not on `PATH`. The NSIS installer supports Windows XP and later; the proxy itself targets Windows XP SP3 and later when built with the `v141_xp` toolset.
+
+Users run the setup, accept the detected game folder or use **Browse**, then review the detected installation state. After the folder is confirmed, setup identifies ThaiFontFix by its exported marker in `binkw32.dll` and checks for exactly one preserved original (`binkw32.bin`, with support for the older backup names). If installed, **Restore** is selected by default; otherwise **Install** is selected. Setup can finish a restore if an earlier attempt stopped after moving the proxy to its temporary name. If other proxy and backup files are missing or inconsistent, setup explains the state and blocks changes until the folder is corrected. Auto-detection checks the Westwood game registry entries first (both 32-bit and 64-bit views on 64-bit Windows, under HKLM and HKCU), then Steam library registry paths, the setup folder and its parents, and standard Westwood folders. Registry `InstallPath` values may name either the game folder or an executable within it. Every accepted folder must contain `RA2.exe`, `game.exe`, `ra2.mix`, and `language.mix` together. Setup starts without administrator access and checks folder write access before changing game files; if Windows denies access, it relaunches setup with the same folder and action and requests administrator access. Install renames the existing `binkw32.dll` to lowercase `binkw32.bin`, installs the proxy as `binkw32.dll`, and creates `thaifontfix.ini` only when one is not already present. Before changing files, setup checks for running RA2/Yuri/Syringe processes, validates that both DLLs are x86, and compares each original named export and ordinal with the packaged proxy. It uses temporary staging names and attempts to roll back if a file operation fails. The setup creates no uninstaller; use **Restore original** to remove the proxy.
+
+To package an already-built proxy without recompiling it, pass `-SkipProxyBuild`. This uses the existing `bink/build-artifacts/binkw32.def` generated for that proxy; use it only when the definition matches the DLL and the DLL was built with the XP target toolset.
+
+To undo the installation, open the same installer, select the game folder, and click **Restore original**. It puts the preserved Bink DLL back as `binkw32.dll` and keeps the INI settings. Close RA2/Yuri's Revenge and Syringe first. Setup requests administrator access only when the selected folder requires it.
+
 ### Visual Studio
 
-Open [`bink.vcxproj`](bink.vcxproj) in Visual Studio 2022 and build **Release | Win32**. The project compiles the Bink proxy and shared ThaiFontFix C++ source with MSVC, generates the proxy export table from the game's original Bink DLL before compilation, then verifies and copies the result to `binkw32-proxy.dll`.
+Open [`bink.vcxproj`](bink.vcxproj) in Visual Studio and build **Release | Win32**. It uses the `v141_xp` toolset so the proxy can load on Windows XP SP3 and later. In Visual Studio Installer, add **C++ Windows XP Support for VS 2017 (v141) tools** if that component is missing. The project compiles the Bink proxy and shared ThaiFontFix C++ source with MSVC, generates the proxy export table from the game's original Bink DLL before compilation, then verifies and copies the result to `binkw32.dll`.
 
 The default game directory is two levels above `bink.vcxproj`, matching this repository's layout. For another install, set the project property `ThaiFontFixGameDirectory` to the game folder. The default Visual Studio tools path is `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`; set `ThaiFontFixVisualStudioPath` if Build Tools is installed elsewhere.
 
@@ -21,7 +37,9 @@ From the repository root, with the RA2 game directory one level above it:
 .\bink\install-bink-proxy.ps1
 ```
 
-The script uses the same MSVC compiler and validation steps. Both build methods read the original `binkw32.dll` export table (or `binkw32.bin`, `BINKW32.TLB`, or the legacy `ThaiFontFixBinkReal.dll` if already installed), produce an x86 proxy, and verify that every original export name and ordinal is forwarded. They require the Visual C++ v143 x86 tools and Windows SDK `10.0.26100.0`.
+The script uses the same MSVC compiler and validation steps. Both build methods read the original `binkw32.dll` export table (or `binkw32.bin`, `BINKW32.TLB`, or the legacy `ThaiFontFixBinkReal.dll` if already installed), produce an x86 proxy, and verify that every original export name and ordinal is forwarded. They require the Visual Studio `v141_xp` x86 tools and Windows SDK `10.0.26100.0`. The installer and proxy statically link the runtime, so they do not require a separate Visual C++ redistributable.
+
+Windows XP support requires XP Service Pack 3 on 32-bit Windows. The project uses the Windows XP platform toolset and PE subsystem version `5.01`; build scripts also reject the known Vista-and-later CRT imports.
 
 Close RA2/Yuri's Revenge, CnCNet, and Syringe before installing or restoring. The original game DLL is preserved beside the proxy. To restore it:
 

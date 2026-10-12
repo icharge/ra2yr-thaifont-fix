@@ -2,6 +2,7 @@
 /build-*/
 /ddraw/build-artifacts/
 /bink/build-artifacts/
+/bink/installer/build-artifacts/
 /syringe/build-artifacts/
 /ghidra-analysis/
 /ghidra-user/
@@ -10,7 +11,8 @@
 
 # Locally built binaries and diagnostics.
 /ddraw/ddraw-integrated.dll
-/bink/binkw32-proxy.dll
+/bink/binkw32.dll
+/bink/installer/ThaiFontFix-Setup.exe
 *.log
 *.pdb
 *.obj

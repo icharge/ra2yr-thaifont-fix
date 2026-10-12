@@ -13,7 +13,7 @@ $root = if ([string]::IsNullOrWhiteSpace($GameDirectory)) {
     (Resolve-Path -LiteralPath $GameDirectory).Path
 }
 
-$proxy = Join-Path $PSScriptRoot 'binkw32-proxy.dll'
+$proxy = Join-Path $PSScriptRoot 'binkw32.dll'
 $target = Join-Path $root 'binkw32.dll'
 $realDll = Join-Path $root 'binkw32.bin'
 $oldTlbDll = Join-Path $root 'BINKW32.TLB'

@@ -27,7 +27,7 @@ $proxyObject = Join-Path $objectRoot 'BinkProxy.obj'
 $sharedObject = Join-Path $objectRoot 'ThaiFontFix.obj'
 $resource = Join-Path $buildRoot 'bink-version.res'
 $linkedOutput = Join-Path $buildRoot 'binkw32.dll'
-$output = Join-Path $PSScriptRoot 'binkw32-proxy.dll'
+$output = Join-Path $PSScriptRoot 'binkw32.dll'
 $commandFile = Join-Path $buildRoot 'build-bink-proxy.cmd'
 $vcvars = Join-Path $VisualStudioPath 'VC\Auxiliary\Build\vcvarsall.bat'
 $resourceCompiler = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\10.0.26100.0\x86\rc.exe'
@@ -40,9 +40,12 @@ foreach ($required in @($source, $sharedSource, $resourceSource, $vcvars, $resou
 }
 
 $toolset = Get-ChildItem -LiteralPath $toolRoot -Directory |
+    Where-Object { $_.Name -match '^14\.16\.' } |
     Sort-Object { [version]$_.Name } -Descending |
     Select-Object -First 1
-if ($null -eq $toolset) { throw "Visual C++ toolset not found under $toolRoot" }
+if ($null -eq $toolset) {
+    throw "Windows XP builds require the Visual Studio v141_xp component (C++ Windows XP Support for VS 2017 tools). Add it in Visual Studio Installer, then rebuild."
+}
 $dumpbin = Join-Path $toolset.FullName 'bin\Hostx86\x86\dumpbin.exe'
 if (-not (Test-Path -LiteralPath $dumpbin -PathType Leaf)) { throw "x86 DUMPBIN not found: $dumpbin" }
 
@@ -112,15 +115,15 @@ if ([string]::IsNullOrWhiteSpace($BuiltDllPath)) {
     $commandLines = @(
         '@echo off',
         'setlocal',
-        "call `"$vcvars`" x86",
+        "call `"$vcvars`" x86 -vcvars_ver=14.16",
         'if errorlevel 1 exit /b %errorlevel%',
         "rc.exe /nologo /fo`"$resource`" `"$resourceSource`"",
         'if errorlevel 1 exit /b %errorlevel%',
-        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /I`"$buildRoot`" /Fo`"$proxyObject`" `"$source`"",
+        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DWINVER=0x0501 /D_WIN32_WINNT=0x0501 /I`"$buildRoot`" /Fo`"$proxyObject`" `"$source`"",
         'if errorlevel 1 exit /b %errorlevel%',
-        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DTHAI_FONT_FIX_INTEGRATED=1 /Fo`"$sharedObject`" `"$sharedSource`"",
+        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DWINVER=0x0501 /D_WIN32_WINNT=0x0501 /DTHAI_FONT_FIX_INTEGRATED=1 /Fo`"$sharedObject`" `"$sharedSource`"",
         'if errorlevel 1 exit /b %errorlevel%',
-        "link.exe /nologo /DLL /OUT:`"$linkedOutput`" /DEF:`"$definition`" /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO `"$proxyObject`" `"$sharedObject`" `"$resource`" kernel32.lib user32.lib gdi32.lib",
+        "link.exe /nologo /DLL /OUT:`"$linkedOutput`" /DEF:`"$definition`" /MACHINE:X86 /SUBSYSTEM:WINDOWS,5.01 /INCREMENTAL:NO `"$proxyObject`" `"$sharedObject`" `"$resource`" kernel32.lib user32.lib gdi32.lib",
         'if errorlevel 1 exit /b %errorlevel%',
         'endlocal'
     )
@@ -133,8 +136,9 @@ if ([string]::IsNullOrWhiteSpace($BuiltDllPath)) {
 if (-not (Test-Path -LiteralPath $verificationTarget -PathType Leaf)) { throw "Build did not produce $verificationTarget" }
 
 $headers = & $dumpbin /nologo /headers $verificationTarget 2>&1
-if ($LASTEXITCODE -ne 0 -or (($headers -join "`n") -notmatch '14C machine \(x86\)')) {
-    throw 'Built Bink proxy did not verify as an x86 PE image.'
+if ($LASTEXITCODE -ne 0 -or (($headers -join "`n") -notmatch '14C machine \(x86\)') -or
+    (($headers -join "`n") -notmatch '5\.01 subsystem version')) {
+    throw 'Built Bink proxy did not verify as an x86 Windows XP-compatible PE image.'
 }
 $builtExports = & $dumpbin /nologo /exports $verificationTarget 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'DUMPBIN could not read the built Bink proxy exports.' }
@@ -148,6 +152,11 @@ foreach ($entry in $exports) {
 if ($builtExportText -notmatch ("(?m)^\s*" + $markerOrdinal + '\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+ThaiFontFixIsActive\s*$')) {
     throw "ThaiFontFixIsActive was not exported at ordinal $markerOrdinal."
 }
+$imports = & $dumpbin /nologo /imports $verificationTarget 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'DUMPBIN could not read the built proxy imports.' }
+if (($imports -join "`n") -match '\b(?:Fls(?:Alloc|Free|GetValue|SetValue)|InitializeCriticalSectionEx)\b') {
+    throw 'Built Bink proxy imports an API unavailable on Windows XP.'
+}
 
 $versionInfo = (Get-Item -LiteralPath $verificationTarget).VersionInfo
 if ($versionInfo.FileDescription -ne 'ThaiFontFix BINKW32 Proxy' -or
@@ -155,5 +164,5 @@ if ($versionInfo.FileDescription -ne 'ThaiFontFix BINKW32 Proxy' -or
     throw 'Built DLL metadata does not identify it as the BINKW32 proxy.'
 }
 Copy-Item -LiteralPath $verificationTarget -Destination $output -Force
-Write-Host "Built x86 BINKW32 proxy: $output"
+Write-Host "Built x86 BINKW32 proxy as binkw32.dll: $output"
 Write-Host "Preserved $($exports.Count) original exports with runtime dispatch to binkw32.bin; marker ordinal: $markerOrdinal."
