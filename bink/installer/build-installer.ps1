@@ -18,7 +18,13 @@ $gameRoot = if ([string]::IsNullOrWhiteSpace($GameDirectory)) {
 }
 
 $proxy = Join-Path $binkDirectory 'binkw32.dll'
+$proxyVersion = (Get-Item -LiteralPath $proxy).VersionInfo.FileVersion
+if ([string]::IsNullOrWhiteSpace($proxyVersion) -or $proxyVersion -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$') {
+    throw "The Bink proxy has no supported numeric file version: $proxyVersion"
+}
 $config = Join-Path $projectRoot 'thaifontfix.ini'
+$readme = Join-Path $installerDirectory 'ThaiFontFix_readme.txt'
+$defaultFont = Join-Path $installerDirectory 'assets\fonts\default\game.fnt'
 $definition = Join-Path $binkDirectory 'build-artifacts\binkw32.def'
 $script = Join-Path $installerDirectory 'ThaiFontFix.nsi'
 $buildRoot = Join-Path $installerDirectory 'build-artifacts'
@@ -36,7 +42,7 @@ if (-not $SkipProxyBuild) {
     Write-Warning 'Packaging the existing proxy without rebuilding it. Confirm it was built with the XP target toolset before distributing this setup.'
 }
 
-foreach ($required in @($proxy, $config, $definition, $script)) {
+foreach ($required in @($proxy, $config, $readme, $defaultFont, $definition, $script)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required installer input is missing: $required"
     }
@@ -68,6 +74,10 @@ if (Test-Path -LiteralPath $staleProxyPackage -PathType Leaf) {
 }
 Copy-Item -LiteralPath $proxy -Destination (Join-Path $packageRoot 'binkw32.dll') -Force
 Copy-Item -LiteralPath $config -Destination (Join-Path $packageRoot 'thaifontfix.ini') -Force
+Copy-Item -LiteralPath $readme -Destination (Join-Path $packageRoot 'ThaiFontFix_readme.txt') -Force
+$fontPackagePath = Join-Path $packageRoot 'fonts\default\game.fnt'
+New-Item -ItemType Directory -Path (Split-Path -Parent $fontPackagePath) -Force | Out-Null
+Copy-Item -LiteralPath $defaultFont -Destination $fontPackagePath -Force
 $exportLines = foreach ($entry in $exportEntries) {
     '{0}|{1}' -f $entry.Ordinal, $entry.Name
 }
@@ -75,7 +85,10 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'expected-exports.txt') -Value 
 
 $includeLines = @(
     '!define PROXY_FILE "build-artifacts\package\binkw32.dll"',
+    ('!define PROXY_VERSION "{0}"' -f $proxyVersion),
     '!define CONFIG_FILE "build-artifacts\package\thaifontfix.ini"',
+    '!define README_FILE "build-artifacts\package\ThaiFontFix_readme.txt"',
+    '!define DEFAULT_FONT_FILE "build-artifacts\package\fonts\default\game.fnt"',
     '!define EXPORTS_FILE "build-artifacts\package\expected-exports.txt"',
     '!define OUTPUT_FILE "build-artifacts\ThaiFontFix-Setup.exe"'
 )

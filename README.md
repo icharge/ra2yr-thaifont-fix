@@ -1,16 +1,16 @@
 # Thai bitmap-font fix for RA2 / Yuri's Revenge
 
-ThaiFontFix adjusts placement of Thai CP874 glyphs in the game's bitmap-font renderer. It supports the supplied Red Alert 2 and Yuri's Revenge executable builds and does not modify the game executable or game.fnt on disk.
+ThaiFontFix adjusts placement of Thai CP874 glyphs in the game's bitmap-font renderer. It supports the supplied Red Alert 2 and Yuri's Revenge executable builds and does not modify the game executable. The Bink installer includes the default `game.fnt` and restores the player's font when uninstalled.
 
 ## Integrations
 
-- [bink/](bink/README.md) is the tested app-local loader. It installs lowercase binkw32.dll and preserves the original as binkw32.bin. It works for direct or CnCNet launches without replacing the renderer.
+- [bink/](bink/README.md) is the tested app-local loader. Its installer installs lowercase binkw32.dll and the packaged `game.fnt`, preserves the original DLL as binkw32.bin, and backs up the original font for restore. It works for direct or CnCNet launches without replacing the renderer.
 - [ddraw/](ddraw/README.md) integrates the fix into CnCNet's TS-DDraw renderer.
 - [syringe/](syringe/README.md) provides separate Syringe extensions for RA2 and Yuri's Revenge.
 
 The experimental version.dll integration was removed because it did not load reliably in the game. Its import table alone was not enough to make it a dependable loader.
 
-The Bink, DDraw, and Syringe variants share the implementation in [shared/ThaiFontFix.cpp](shared/ThaiFontFix.cpp), use [thaifontfix.ini](thaifontfix.ini), and write diagnostics to thaifontfix.log beside the game executables. Their active-hook marker prevents duplicate installation when variants are present together.
+The Bink, DDraw, and Syringe variants share the implementation in [shared/ThaiFontFix.cpp](shared/ThaiFontFix.cpp), use [thaifontfix.ini](thaifontfix.ini), and write diagnostics to thaifontfix.log beside the game executables. Their active-hook marker prevents duplicate installation when variants are present together. The installer's font assets live under `bink/installer/assets/fonts/`, ready for additional font choices later.
 
 ## Research and preview
 
