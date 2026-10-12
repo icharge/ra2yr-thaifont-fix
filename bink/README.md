@@ -6,6 +6,14 @@ The installer renames the original game DLL to lowercase `binkw32.bin` and insta
 
 ## Build and install
 
+### Visual Studio
+
+Open [`bink.vcxproj`](bink.vcxproj) in Visual Studio 2022 and build **Release | Win32**. The project compiles the Bink proxy and shared ThaiFontFix C++ source with MSVC, generates the proxy export table from the game's original Bink DLL before compilation, then verifies and copies the result to `binkw32-proxy.dll`.
+
+The default game directory is two levels above `bink.vcxproj`, matching this repository's layout. For another install, set the project property `ThaiFontFixGameDirectory` to the game folder. The default Visual Studio tools path is `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`; set `ThaiFontFixVisualStudioPath` if Build Tools is installed elsewhere.
+
+### PowerShell build
+
 From the repository root, with the RA2 game directory one level above it:
 
 ```powershell
@@ -13,7 +21,7 @@ From the repository root, with the RA2 game directory one level above it:
 .\bink\install-bink-proxy.ps1
 ```
 
-The build reads the original `binkw32.dll` export table (or `binkw32.bin`, `BINKW32.TLB`, or the legacy `ThaiFontFixBinkReal.dll` if already installed), produces an x86 proxy, and verifies that every original export name and ordinal is forwarded. It requires Visual Studio 2022 Build Tools with the x86 C++ tools and Windows SDK `10.0.26100.0`.
+The script uses the same MSVC compiler and validation steps. Both build methods read the original `binkw32.dll` export table (or `binkw32.bin`, `BINKW32.TLB`, or the legacy `ThaiFontFixBinkReal.dll` if already installed), produce an x86 proxy, and verify that every original export name and ordinal is forwarded. They require the Visual C++ v143 x86 tools and Windows SDK `10.0.26100.0`.
 
 Close RA2/Yuri's Revenge, CnCNet, and Syringe before installing or restoring. The original game DLL is preserved beside the proxy. To restore it:
 

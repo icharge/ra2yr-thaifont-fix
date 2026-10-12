@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$GameDirectory,
-    [string]$VisualStudioPath = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools'
+    [string]$VisualStudioPath = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools',
+    [switch]$PrepareOnly,
+    [string]$BuiltDllPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,31 +102,41 @@ $headerLines | Set-Content -LiteralPath $exportsHeader -Encoding Ascii
 $definitionLines += ('    ThaiFontFixIsActive=_ThaiFontFixIsActive@0 @{0}' -f $markerOrdinal)
 Set-Content -LiteralPath $definition -Value $definitionLines -Encoding Ascii
 
-$commandLines = @(
-    '@echo off',
-    'setlocal',
-    "call `"$vcvars`" x86",
-    'if errorlevel 1 exit /b %errorlevel%',
-    "rc.exe /nologo /fo`"$resource`" `"$resourceSource`"",
-    'if errorlevel 1 exit /b %errorlevel%',
-    "cl.exe /nologo /c /MT /O2 /W4 /EHsc /I`"$buildRoot`" /Fo`"$proxyObject`" `"$source`"",
-    'if errorlevel 1 exit /b %errorlevel%',
-    "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DTHAI_FONT_FIX_INTEGRATED=1 /Fo`"$sharedObject`" `"$sharedSource`"",
-    'if errorlevel 1 exit /b %errorlevel%',
-    "link.exe /nologo /DLL /OUT:`"$linkedOutput`" /DEF:`"$definition`" /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO `"$proxyObject`" `"$sharedObject`" `"$resource`" kernel32.lib user32.lib gdi32.lib",
-    'if errorlevel 1 exit /b %errorlevel%',
-    'endlocal'
-)
-Set-Content -LiteralPath $commandFile -Value $commandLines -Encoding Ascii
-& $env:ComSpec /d /c "`"$commandFile`""
-if ($LASTEXITCODE -ne 0) { throw "MSVC failed to build the Bink proxy (exit code $LASTEXITCODE)." }
-if (-not (Test-Path -LiteralPath $linkedOutput -PathType Leaf)) { throw "Build did not produce $linkedOutput" }
+if ($PrepareOnly) {
+    Write-Host "Prepared Bink export definitions from $exportSource in $buildRoot"
+    return
+}
 
-$headers = & $dumpbin /nologo /headers $linkedOutput 2>&1
+$verificationTarget = $linkedOutput
+if ([string]::IsNullOrWhiteSpace($BuiltDllPath)) {
+    $commandLines = @(
+        '@echo off',
+        'setlocal',
+        "call `"$vcvars`" x86",
+        'if errorlevel 1 exit /b %errorlevel%',
+        "rc.exe /nologo /fo`"$resource`" `"$resourceSource`"",
+        'if errorlevel 1 exit /b %errorlevel%',
+        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /I`"$buildRoot`" /Fo`"$proxyObject`" `"$source`"",
+        'if errorlevel 1 exit /b %errorlevel%',
+        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DTHAI_FONT_FIX_INTEGRATED=1 /Fo`"$sharedObject`" `"$sharedSource`"",
+        'if errorlevel 1 exit /b %errorlevel%',
+        "link.exe /nologo /DLL /OUT:`"$linkedOutput`" /DEF:`"$definition`" /MACHINE:X86 /SUBSYSTEM:WINDOWS /INCREMENTAL:NO `"$proxyObject`" `"$sharedObject`" `"$resource`" kernel32.lib user32.lib gdi32.lib",
+        'if errorlevel 1 exit /b %errorlevel%',
+        'endlocal'
+    )
+    Set-Content -LiteralPath $commandFile -Value $commandLines -Encoding Ascii
+    & $env:ComSpec /d /c "`"$commandFile`""
+    if ($LASTEXITCODE -ne 0) { throw "MSVC failed to build the Bink proxy (exit code $LASTEXITCODE)." }
+} else {
+    $verificationTarget = (Resolve-Path -LiteralPath $BuiltDllPath).Path
+}
+if (-not (Test-Path -LiteralPath $verificationTarget -PathType Leaf)) { throw "Build did not produce $verificationTarget" }
+
+$headers = & $dumpbin /nologo /headers $verificationTarget 2>&1
 if ($LASTEXITCODE -ne 0 -or (($headers -join "`n") -notmatch '14C machine \(x86\)')) {
     throw 'Built Bink proxy did not verify as an x86 PE image.'
 }
-$builtExports = & $dumpbin /nologo /exports $linkedOutput 2>&1
+$builtExports = & $dumpbin /nologo /exports $verificationTarget 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'DUMPBIN could not read the built Bink proxy exports.' }
 $builtExportText = $builtExports -join "`n"
 foreach ($entry in $exports) {
@@ -137,11 +149,11 @@ if ($builtExportText -notmatch ("(?m)^\s*" + $markerOrdinal + '\s+[0-9A-Fa-f]+\s
     throw "ThaiFontFixIsActive was not exported at ordinal $markerOrdinal."
 }
 
-$versionInfo = (Get-Item -LiteralPath $linkedOutput).VersionInfo
+$versionInfo = (Get-Item -LiteralPath $verificationTarget).VersionInfo
 if ($versionInfo.FileDescription -ne 'ThaiFontFix BINKW32 Proxy' -or
     $versionInfo.OriginalFilename -ne 'binkw32.dll') {
     throw 'Built DLL metadata does not identify it as the BINKW32 proxy.'
 }
-Copy-Item -LiteralPath $linkedOutput -Destination $output -Force
+Copy-Item -LiteralPath $verificationTarget -Destination $output -Force
 Write-Host "Built x86 BINKW32 proxy: $output"
 Write-Host "Preserved $($exports.Count) original exports with runtime dispatch to binkw32.bin; marker ordinal: $markerOrdinal."

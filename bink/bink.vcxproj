@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{A19F97B1-20A4-4E7E-A152-752F82251F64}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>ThaiFontFixBink</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)build-artifacts\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)build-artifacts\$(Configuration)\obj\</IntDir>
+    <TargetName>binkw32</TargetName>
+    <ThaiFontFixGameDirectory Condition="'$(ThaiFontFixGameDirectory)' == ''">$(ProjectDir)..\..</ThaiFontFixGameDirectory>
+    <ThaiFontFixVisualStudioPath Condition="'$(ThaiFontFixVisualStudioPath)' == ''">C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools</ThaiFontFixVisualStudioPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_USRDLL;THAI_FONT_FIX_INTEGRATED=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(ProjectDir)build-artifacts;$(ProjectDir)..\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)build-artifacts\binkw32.def</ModuleDefinitionFile>
+      <SubSystem>Windows</SubSystem>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <LinkIncremental>false</LinkIncremental>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkIncremental>false</LinkIncremental>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="BinkProxy.cpp" />
+    <ClCompile Include="..\shared\ThaiFontFix.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="bink-version.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+  <Target Name="PrepareBinkProxyExports" BeforeTargets="ClCompile">
+    <Exec Command="powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)build.ps1&quot; -PrepareOnly -GameDirectory &quot;$(ThaiFontFixGameDirectory)&quot; -VisualStudioPath &quot;$(ThaiFontFixVisualStudioPath)&quot;" />
+  </Target>
+  <Target Name="VerifyAndPublishBinkProxy" AfterTargets="Build">
+    <Exec Command="powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)build.ps1&quot; -BuiltDllPath &quot;$(TargetPath)&quot; -GameDirectory &quot;$(ThaiFontFixGameDirectory)&quot; -VisualStudioPath &quot;$(ThaiFontFixVisualStudioPath)&quot;" />
+  </Target>
+</Project>
