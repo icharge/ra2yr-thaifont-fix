@@ -121,9 +121,9 @@ if ([string]::IsNullOrWhiteSpace($BuiltDllPath)) {
         'if errorlevel 1 exit /b %errorlevel%',
         "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DWINVER=0x0501 /D_WIN32_WINNT=0x0501 /I`"$buildRoot`" /Fo`"$proxyObject`" `"$source`"",
         'if errorlevel 1 exit /b %errorlevel%',
-        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DWINVER=0x0501 /D_WIN32_WINNT=0x0501 /DTHAI_FONT_FIX_INTEGRATED=1 /Fo`"$sharedObject`" `"$sharedSource`"",
+        "cl.exe /nologo /c /MT /O2 /W4 /EHsc /DWINVER=0x0501 /D_WIN32_WINNT=0x0501 /DTHAI_FONT_FIX_INTEGRATED=1 /DTHAI_FONT_FIX_BINK_TRUETYPE=1 /Fo`"$sharedObject`" `"$sharedSource`"",
         'if errorlevel 1 exit /b %errorlevel%',
-        "link.exe /nologo /DLL /OUT:`"$linkedOutput`" /DEF:`"$definition`" /MACHINE:X86 /SUBSYSTEM:WINDOWS,5.01 /INCREMENTAL:NO `"$proxyObject`" `"$sharedObject`" `"$resource`" kernel32.lib user32.lib gdi32.lib",
+        "link.exe /nologo /DLL /OUT:`"$linkedOutput`" /DEF:`"$definition`" /MACHINE:X86 /SUBSYSTEM:WINDOWS,5.01 /INCREMENTAL:NO `"$proxyObject`" `"$sharedObject`" `"$resource`" usp10.lib kernel32.lib user32.lib gdi32.lib",
         'if errorlevel 1 exit /b %errorlevel%',
         'endlocal'
     )

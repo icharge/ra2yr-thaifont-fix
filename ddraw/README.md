@@ -29,7 +29,7 @@ MaxExtraSpacing=8
 DebugLog=1
 ```
 
-`Enabled` toggles the fix. `CenterMarks` controls horizontal centering, `ToneMarkRaise` sets the vertical offset in pixels (0–16) for stacked marks, including a tone mark above Sara Am, and `MaxExtraSpacing` limits the font spacing handled by the fix (0–8). `DebugLog=1` writes `thaifontfix.log` beside the DLL. The Bink and Syringe builds read the same INI and append to the same log.
+`Enabled` toggles the fix. `CenterMarks` controls horizontal centering, `ToneMarkRaise` sets the vertical offset in pixels (0–16) for stacked marks, including a tone mark above Sara Am, and `MaxExtraSpacing` limits the font spacing handled by the fix (0–8). `DebugLog=1` writes `thaifontfix.log` beside the DLL, clearing it at startup before recording that run. The Bink and Syringe builds read the same INI and use the same log path.
 
 The log reports whether the hooks installed and then, on first use, whether the layout/render hooks were reached, whether a font's Thai mark glyphs were accepted, whether spacing allowed adjustment, and whether a Thai mark was handled. Sara Am stacking is reported as `tone mark stacked above Sara Am`. If file fallback is needed, it logs whether `game.fnt` matched and was loaded. `font hooks installed` only confirms that the entry points were patched; the runtime messages confirm whether the fix reached a Thai glyph. If `DebugLog=1` was enabled for the current run, share the full `thaifontfix.log` after opening a menu that displays Thai text.
 

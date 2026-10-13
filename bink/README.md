@@ -47,10 +47,26 @@ Close RA2/Yuri's Revenge, CnCNet, and Syringe before installing or restoring. Th
 .\bink\install-bink-proxy.ps1 -Restore
 ```
 
-Use `-GameDirectory <path>` when the game is installed somewhere else. The proxy uses the shared `thaifontfix.ini` and appends diagnostics to `thaifontfix.log` beside the game DLLs.
+Use `-GameDirectory <path>` when the game is installed somewhere else. The proxy uses the shared `thaifontfix.ini`; when `DebugLog=1`, it clears `thaifontfix.log` during startup and appends diagnostics for that run beside the game DLLs.
 
 ## Loader behavior and limits
 
 The supported `game.exe` and `gamemd.exe` import `BINKW32.DLL`. The CnCNet launcher only hands off to those engines; the Bink proxy is loaded by the engine process. This is a candidate path verified from the supplied game's PE import/export tables, but its actual load and hook behavior must still be confirmed in a game run by checking `thaifontfix.log` for the proxy module path and hook messages.
 
 The proxy preserves each original export name and ordinal. Small x86 stubs resolve the matching export from `binkw32.bin` by its full game-folder path and tail-jump to it; this avoids relying on Windows to locate a renamed DLL from a PE forwarder string. The proxy does not emulate or modify Bink video/audio behavior. Like the other external-loader variants, the shared font-hook code still validates the game executable and live font state before changing rendering. Existing installs using the earlier `.TLB` or `ThaiFontFixBinkReal.dll` backup name are restored and migrated by the installer.
+
+## TrueType UI rendering prototype
+
+On startup, the Bink proxy adds any missing keys under `[TrueType]` to `thaifontfix.ini` without replacing existing values. The standalone test build enables live rendering by default; regular release and installer builds default it off. Defaults are Arial Regular with preview off. You can set a face/style explicitly or override `Render`:
+
+```ini
+[TrueType]
+Render=1
+Font=Arial
+Style=Regular
+Size=12
+```
+
+`Style` accepts `Regular`, `Bold`, `Italic`, or `BoldItalic` (also `Bold Italic`). `Size` is the rendered pixel height from 8 to 64; `0` uses the game's font height. The default face and style are Arial Regular, and the default size is `0`. Size changes the glyphs only; the game's layout, dropdown row height, and wrapping remain unchanged. For compact controls, try `Size=12`. `Preview=1` remains available separately to save the first eligible Thai sample as `thaifontfix-truetype-preview.bmp`.
+
+When rendering is enabled, the Bink proxy captures the destination region before the first glyph, records the game's positions and per-character colors, and replaces the run on its final glyph callback while the surface is still active. The original FNT path supplies measurement and line breaks. The renderer falls back to the game's bitmap output when surface or clip bounds cannot be validated, a string contains unsupported control characters, or shaping/rasterization fails. Test this prototype in game; it is not included in the installer payload and has not been visually verified across all UI screens.

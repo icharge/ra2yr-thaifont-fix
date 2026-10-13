@@ -62,9 +62,9 @@ The preview harness in `render_fnt_test.py` reads actual `game.fnt` records and 
 
 ## TrueType rendering investigation status
 
-The bitmap path is the implemented and tested behavior. A Windows TrueType path remains exploratory. Since the game passes legacy CP874 bytes and its glyph hook sees one character at a time, a TrueType option must decode a complete text run to Unicode and shape Thai before rendering individual glyphs. The recommended first experiment is an offline Uniscribe shaping plus GDI-to-DIB renderer, compared with the FNT preview. DirectWrite is not a suitable required dependency while Windows XP remains supported.
+The bitmap path remains the compatibility fallback. A Bink-only, opt-in live TrueType prototype now decodes complete CP874 strings, uses Uniscribe/GDI to rasterize them, and overlays the result on the game's 16-bit surface from the final glyph callback. This placement keeps surface access inside the original text draw. The prototype retains FNT measurement and wrapping, and declines unsupported control/multicolor runs or uncertain surface bounds. It is not visually verified; test results and remaining limitations are tracked in [`handover.md`](handover.md).
 
-Before adding a runtime replacement, determine the UI surface's pixel format/palette, transparent-pixel rule, foreground-color handling, clipping, scaling, and x-advance contract. A runtime implementation would need the full string at the layout/direct-text hook and cluster positions available to rendering; shaping each byte independently at the glyph hook will not correctly place Thai marks. Also compare this approach with offline TrueType-to-FNT generation, which could preserve the game's bitmap renderer if the generated font retains the required FNT dimensions and byte map. The current investigation checklist is in [`handover.md`](handover.md).
+The glyph hook alone is too late to shape Thai clusters because it receives one byte at a time. The prototype pairs the full string and computed glyph positions from the layout/direct-text context. The static renderer contract, including packed foreground color and clipping, is described below. Offline TrueType-to-FNT generation remains an alternative if runtime surface access proves unreliable.
 
 ## Sara Am and tone-mark stacking
 
@@ -80,3 +80,27 @@ Before adding a runtime replacement, determine the UI surface's pixel format/pal
 - `D3` remains a spacing glyph. `BuildSaraAmTopMask` only enables the split when the live/FNT bitmap has a compact upper component left of a long vertical run at the lower glyph's right edge. The upper pixels are drawn centered over the preceding base; the remaining Sara Aa pixels keep the game's baseline and normal Sara Am advance. A bitmap that fails these checks is left intact.
 - For an accepted font state, `ThaiRenderHook` defers a tone mark for one glyph. If the next glyph is a valid `D3` Sara Am, the hook draws the split Sara Am first, then draws the pending tone mark at `ToneMarkRaise` pixels above its normal y position. Otherwise it flushes the tone mark with its ordinary placement. The debug log reports `tone mark stacked above Sara Am` when this branch runs.
 - The preview harness looks ahead in the sample byte sequence to model this placement using the actual `game.fnt` bitmap records. Rebuild it with `python .\render_fnt_test.py --output .\thai-render-sara-am.png`. This checks the bitmap split and approximate coordinates, but it is not an execution of the game renderer. The Bink, integrated DDraw, and Syringe builds compile; confirm Sara Am-specific behavior in game as well.
+
+## Game glyph-render surface contract (static analysis, 2026-10-13)
+
+Both installed supported executables were checked against the hook identities and analyzed with Ghidra 12.1.4. The exact files were RA2 `game.exe` (SHA-256 `DA34AD390DED45AC738A94707F05DA452502F9602537AAA2DC8BE50BAA091098`, timestamp `0x3B1EBBED`, image size `0x743000`) and Yuri's Revenge `GameMD.exe` (SHA-256 `7B8A068535D6AF06845EDF95AE829B113D00C02909330E16F197426CD7DB94B6`, timestamp `0x3BDF544E`, image size `0x793000`). All 12-byte prologues already recorded for the layout, glyph-render, and direct-text hooks match these files.
+
+The two builds have the same relevant rendering contract, with these entry points:
+
+| Function | RA2 `game.exe` | Yuri's Revenge `GameMD.exe` |
+| --- | ---: | ---: |
+| Layout | `0x00432490` | `0x00434CD0` |
+| Glyph renderer | `0x004318E0` | `0x00434120` |
+| Direct-text helper | `0x00431CC0` | `0x00434500` |
+| Clip intersection helper | `0x00432000` | `0x00434840` |
+
+Static observations from the glyph renderer and its helpers:
+
+- The layout and direct-text paths receive the complete NUL-terminated `short*` string, walk its 16-bit units, and call the glyph renderer for each unit. There is no shaping step. The next pen x comes from the renderer's return value.
+- The renderer maps each character through the parsed FNT glyph map, reads the glyph width from the record, and draws its 1-bit rows. Set bits overwrite destination pixels; unset bits leave the existing surface unchanged.
+- The renderer writes through a `ushort*` at the font object's `+0x0C` field. Its row stride is stored in `+0x10` as the surface pitch divided by two, so the text target is a 16-bit-per-pixel buffer. A set glyph bit writes one 16-bit color word. The color defaults to the font object's `+0x24` word and uses the per-glyph color argument when that argument is not `-1`.
+- Before drawing a text run, the game calls virtual methods on the target object: slot `+0x5C` supplies the pixel pointer, slot `+0x74` supplies a byte pitch that the game divides by two, and slots `+0x7C`/`+0x80` provide bounds used to initialize the clip rectangle. After the run, slot `+0x60` releases the target and the game clears its cached pointer and pitch. These method roles are inferred from their results and use; the target wrapper's concrete type and method names are not established.
+- With clipping enabled (`font + 0x41`), each glyph rectangle from `(x, y)` through `(x + width - 1, y + height - 1)` is intersected with the font clip rectangle at `+0x30`. The intersection helper uses inclusive edges, and the renderer checks each set pixel against those bounds.
+- A normal glyph returns `x + glyph width + font spacing` (`font + 0x2C`). The layout also handles tabs, line breaks, wrapping, alignment, and per-glyph color changes before calling the renderer.
+
+Primary-surface setup at `0x004BA770` queries a `DDSURFACEDESC`, saves the returned RGB bit masks, and derives per-channel shifts used by the game's color-packing helper at `0x004355D0`. The text renderer therefore receives an already packed 16-bit color word; the conversion is based on the primary surface's reported masks instead of one hard-coded RGB layout. Static code checks several packed 15/16-bit layouts, but it does not reveal which mask values were returned in the prior Yuri run. The target wrapper's concrete type and exact lock semantics also remain unresolved. The installed `ddraw.ini` selects `Renderer=auto`; that setting alone does not show which presentation renderer was active. Existing `thaifontfix.log` entries confirm that Yuri's Revenge reached the direct-text, layout, and glyph hooks, but they do not record the surface masks or presentation path. A TrueType renderer will need to convert its GDI output using the active masks, preserve the existing transparent-bit and clip behavior, and use the same locked destination buffer.

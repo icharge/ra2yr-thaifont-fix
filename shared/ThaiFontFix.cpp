@@ -1,6 +1,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <stdint.h>
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+#include <usp10.h>
+#endif
 
 // x86 system-DLL proxies and in-memory Thai bitmap-font shaping hooks.
 // The game executable and FNT file are never edited on disk.
@@ -20,18 +23,36 @@ static FARPROC g_winmmForwarders[5];
 // The integrated TS-DDraw build has no proxy state.
 #endif
 
+enum {
+    TRUE_TYPE_STYLE_REGULAR = 0,
+    TRUE_TYPE_STYLE_BOLD = 1,
+    TRUE_TYPE_STYLE_ITALIC = 2,
+    TRUE_TYPE_STYLE_BOLD_ITALIC = 3
+};
+
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE_DEFAULT_RENDER)
+#define THAI_FONT_FIX_BINK_TRUETYPE_RENDER_DEFAULT TRUE
+#else
+#define THAI_FONT_FIX_BINK_TRUETYPE_RENDER_DEFAULT FALSE
+#endif
+
 struct FontFixConfig {
     BOOL enabled;
     BOOL centerMarks;
     BOOL debugLog;
     int toneMarkRaise;
     int maxExtraSpacing;
+    BOOL trueTypePreview;
+    BOOL trueTypeRender;
+    int trueTypeStyle;
+    int trueTypeSize;
+    char trueTypeFont[LF_FACESIZE];
 };
 
 #if defined(THAI_FONT_PROXY_WINMM) || defined(THAI_FONT_FIX_INTEGRATED)
-static FontFixConfig g_config = { TRUE, TRUE, TRUE, 2, 8 };
+static FontFixConfig g_config = { TRUE, TRUE, TRUE, 2, 8, FALSE, THAI_FONT_FIX_BINK_TRUETYPE_RENDER_DEFAULT, TRUE_TYPE_STYLE_REGULAR, 0, "Arial" };
 #else
-static FontFixConfig g_config = { TRUE, TRUE, FALSE, 2, 8 };
+static FontFixConfig g_config = { TRUE, TRUE, FALSE, 2, 8, FALSE, THAI_FONT_FIX_BINK_TRUETYPE_RENDER_DEFAULT, TRUE_TYPE_STYLE_REGULAR, 0, "Arial" };
 #endif
 static volatile LONG g_runtimeInit;
 
@@ -65,6 +86,12 @@ static volatile LONG g_loggedNoLayoutContext;
 static volatile LONG g_loggedMarkHandled;
 static volatile LONG g_loggedSaraAmSplit;
 static volatile LONG g_loggedToneAboveSaraAm;
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+static volatile LONG g_loggedTrueTypePreview;
+static volatile LONG g_loggedTrueTypeRender;
+static volatile LONG g_loggedTrueTypeRenderFallback;
+static BOOL g_trueTypeDefaultsAdded;
+#endif
 
 #if defined(THAI_FONT_PROXY_DDRAW)
 static const char* const kDdrawExportNames[22] = {
@@ -117,6 +144,55 @@ struct FontState {
     BOOL saraAmSplitAvailable;
 };
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+struct TrueTypeLine {
+    BYTE cp874[256];
+    int length;
+    int x;
+    int y;
+    int right;
+    int color;
+    WORD glyphColors[256];
+    SHORT characterStarts[256];
+    SHORT characterEnds[256];
+    BYTE* mask;
+    DWORD maskWidth;
+    DWORD maskHeight;
+    DWORD maskContentWidth;
+    DWORD maskContentHeight;
+};
+
+struct TrueTypeRenderRun {
+    BOOL enabled;
+    BOOL valid;
+    BOOL captured;
+    BOOL sawGlyph;
+    BOOL completed;
+    BOOL rendered;
+    BOOL fallbackLogged;
+    const char* failureReason;
+    unsigned failureCodeUnit;
+    DWORD fontHeight;
+    int boxX;
+    int boxY;
+    int boxWidth;
+    int boxHeight;
+    WORD* surface;
+    DWORD pitchWords;
+    int captureX;
+    int captureY;
+    DWORD captureWidth;
+    DWORD captureHeight;
+    WORD* background;
+    WORD* bitmapRendered;
+    DWORD expectedGlyphCount;
+    DWORD seenGlyphCount;
+    BYTE expectedCodes[1024];
+    unsigned lineCount;
+    TrueTypeLine lines[32];
+};
+#endif
+
 struct LayoutContext {
     LayoutContext* previous;
     void* font;
@@ -137,6 +213,9 @@ struct LayoutContext {
     int pendingToneX;
     int pendingToneY;
     int pendingToneColor;
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    TrueTypeRenderRun trueType;
+#endif
 };
 
 static FontState* g_fontStates;
@@ -339,16 +418,31 @@ static BOOL GetProxyConfigurationPath(char* path, SIZE_T capacity) {
     return AppendText(path, capacity, &length, "thaifontfix.ini");
 }
 
+static BOOL GetDebugLogPath(char* path, SIZE_T capacity) {
+    if (!GetProxyConfigurationPath(path, capacity)) return FALSE;
+    SIZE_T length = (SIZE_T)lstrlenA(path);
+    if (length < 4) return FALSE;
+    path[length - 3] = 'l';
+    path[length - 2] = 'o';
+    path[length - 1] = 'g';
+    return TRUE;
+}
+
+static BOOL ClearDebugLog(void) {
+    char path[MAX_PATH];
+    if (!GetDebugLogPath(path, MAX_PATH)) return FALSE;
+    HANDLE logFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (logFile == INVALID_HANDLE_VALUE) return FALSE;
+    CloseHandle(logFile);
+    return TRUE;
+}
+
 static void WriteDebugDiagnostic(const char* message) {
     if (!g_config.debugLog || message == NULL) return;
 
     char path[MAX_PATH];
-    if (!GetProxyConfigurationPath(path, MAX_PATH)) return;
-    SIZE_T length = (SIZE_T)lstrlenA(path);
-    if (length < 4) return;
-    path[length - 3] = 'l';
-    path[length - 2] = 'o';
-    path[length - 1] = 'g';
+    if (!GetDebugLogPath(path, MAX_PATH)) return;
 
     HANDLE logFile = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
         NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -428,6 +522,718 @@ static void LogPath(const char* label, const char* value) {
     WriteDebugDiagnostic(message);
 }
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+static int GetTrueTypeFontWeight(void) {
+    return g_config.trueTypeStyle == TRUE_TYPE_STYLE_BOLD ||
+        g_config.trueTypeStyle == TRUE_TYPE_STYLE_BOLD_ITALIC ? FW_BOLD : FW_NORMAL;
+}
+
+static BOOL IsTrueTypeFontItalic(void) {
+    return g_config.trueTypeStyle == TRUE_TYPE_STYLE_ITALIC ||
+        g_config.trueTypeStyle == TRUE_TYPE_STYLE_BOLD_ITALIC;
+}
+
+static DWORD GetConfiguredTrueTypeFontHeight(DWORD nativeHeight) {
+    if (g_config.trueTypeSize >= 8 && g_config.trueTypeSize <= 64) {
+        return (DWORD)g_config.trueTypeSize;
+    }
+    return nativeHeight >= 8 && nativeHeight <= 64 ? nativeHeight : 16;
+}
+
+static void InvalidateTrueTypeRun(TrueTypeRenderRun* run, const char* reason) {
+    if (run == NULL) return;
+    if (run->failureReason == NULL) run->failureReason = reason;
+    run->valid = FALSE;
+}
+
+static const char* GetTrueTypeFontStyleName(void) {
+    switch (g_config.trueTypeStyle) {
+    case TRUE_TYPE_STYLE_BOLD: return "Bold";
+    case TRUE_TYPE_STYLE_ITALIC: return "Italic";
+    case TRUE_TYPE_STYLE_BOLD_ITALIC: return "BoldItalic";
+    default: return "Regular";
+    }
+}
+
+static BOOL SaveTrueTypePreviewBitmap(const char* path, const BYTE* pixels,
+    DWORD width, DWORD height, DWORD sourceStrideWidth) {
+    if (path == NULL || pixels == NULL || width == 0 || height == 0 ||
+        width > 8192 || height > 128 || sourceStrideWidth < width ||
+        sourceStrideWidth > 8192) return FALSE;
+
+    BITMAPFILEHEADER fileHeader;
+    BITMAPINFOHEADER infoHeader;
+    ZeroMemory(&fileHeader, sizeof(fileHeader));
+    ZeroMemory(&infoHeader, sizeof(infoHeader));
+    DWORD rowBytes = width * 4;
+    fileHeader.bfType = 0x4d42;
+    fileHeader.bfOffBits = sizeof(fileHeader) + sizeof(infoHeader);
+    fileHeader.bfSize = fileHeader.bfOffBits + rowBytes * height;
+    infoHeader.biSize = sizeof(infoHeader);
+    infoHeader.biWidth = (LONG)width;
+    infoHeader.biHeight = (LONG)height;
+    infoHeader.biPlanes = 1;
+    infoHeader.biBitCount = 32;
+    infoHeader.biCompression = BI_RGB;
+    infoHeader.biSizeImage = rowBytes * height;
+
+    HANDLE file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return FALSE;
+
+    DWORD written = 0;
+    BOOL success = WriteFile(file, &fileHeader, sizeof(fileHeader), &written, NULL) &&
+        written == sizeof(fileHeader) &&
+        WriteFile(file, &infoHeader, sizeof(infoHeader), &written, NULL) &&
+        written == sizeof(infoHeader);
+    for (DWORD row = 0; success && row < height; ++row) {
+        const BYTE* source = pixels + (SIZE_T)(height - row - 1) * sourceStrideWidth * 4;
+        success = WriteFile(file, source, rowBytes, &written, NULL) && written == rowBytes;
+    }
+    CloseHandle(file);
+    return success;
+}
+
+static void TryCreateTrueTypePreview(short* text, FontState* state) {
+    if (!g_config.trueTypePreview ||
+        InterlockedCompareExchange(&g_loggedTrueTypePreview, 0, 0) != 0 || text == NULL) return;
+
+    BYTE cp874[128];
+    WCHAR unicode[128];
+    int length = 0;
+    BOOL hasThai = FALSE;
+    for (; length < (int)(sizeof(cp874)); ++length) {
+        short value = 0;
+        if (!IsReadableRange(text + length, sizeof(short)) ||
+            !CopyMemorySafely(&value, text + length, sizeof(value))) return;
+        if (value == 0) break;
+        if (value < 0 || value > 0xff || value < 0x20 || value == 0x7f) return;
+        cp874[length] = (BYTE)value;
+        if (value >= 0xa1 && value <= 0xfb) hasThai = TRUE;
+    }
+    if (length == 0 || length >= (int)(sizeof(cp874)) || !hasThai) return;
+
+    int wideLength = MultiByteToWideChar(874, 0, (LPCCH)cp874, length,
+        unicode, (int)(sizeof(unicode) / sizeof(unicode[0])));
+    if (wideLength <= 0 || wideLength > (int)(sizeof(unicode) / sizeof(unicode[0]))) return;
+
+    DWORD nativeHeight = state != NULL && IsReadableRange(state->data + 8, sizeof(DWORD))
+        ? *(DWORD*)(state->data + 8) : 16;
+    DWORD fontHeight = GetConfiguredTrueTypeFontHeight(nativeHeight);
+    DWORD width = (DWORD)length * fontHeight * 2 + 16;
+    DWORD height = fontHeight + 8;
+    if (width > 8192 || height > 128) return;
+
+    HDC dc = CreateCompatibleDC(NULL);
+    if (dc == NULL) return;
+    BITMAPINFO bitmapInfo;
+    ZeroMemory(&bitmapInfo, sizeof(bitmapInfo));
+    bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biWidth = (LONG)width;
+    bitmapInfo.bmiHeader.biHeight = -(LONG)height;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biBitCount = 32;
+    bitmapInfo.bmiHeader.biCompression = BI_RGB;
+    BYTE* pixels = NULL;
+    HBITMAP bitmap = CreateDIBSection(dc, &bitmapInfo, DIB_RGB_COLORS,
+        (void**)&pixels, NULL, 0);
+    if (bitmap == NULL || pixels == NULL) {
+        if (bitmap != NULL) DeleteObject(bitmap);
+        DeleteDC(dc);
+        return;
+    }
+    HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
+    if (oldBitmap == NULL || oldBitmap == HGDI_ERROR) {
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+        return;
+    }
+    char fontFace[LF_FACESIZE];
+    CopyMemory(fontFace, g_config.trueTypeFont, sizeof(fontFace));
+    fontFace[LF_FACESIZE - 1] = 0;
+    HFONT font = CreateFontA(-(int)fontHeight, 0, 0, 0, GetTrueTypeFontWeight(),
+        IsTrueTypeFontItalic(), FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        NONANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, fontFace);
+    HFONT oldFont = font != NULL ? (HFONT)SelectObject(dc, font) : NULL;
+    if (font == NULL || oldFont == NULL || oldFont == (HFONT)HGDI_ERROR) {
+        if (oldFont != NULL && oldFont != (HFONT)HGDI_ERROR) SelectObject(dc, oldFont);
+        if (font != NULL) DeleteObject(font);
+        SelectObject(dc, oldBitmap);
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+        return;
+    }
+    ZeroMemory(pixels, (SIZE_T)width * height * 4);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255, 255, 255));
+    SetTextAlign(dc, TA_LEFT | TA_TOP | TA_NOUPDATECP);
+
+    SCRIPT_STRING_ANALYSIS analysis = NULL;
+    HRESULT analyzed = ScriptStringAnalyse(dc, unicode, wideLength, wideLength * 3 + 16,
+        -1, SSA_GLYPHS | SSA_FALLBACK, 0, NULL, NULL, NULL, NULL, NULL, &analysis);
+    BOOL rendered = analyzed == S_OK && analysis != NULL &&
+        ScriptStringOut(analysis, 2, 2, 0, NULL, 0, 0, FALSE) == S_OK;
+    SIZE measured = {0, 0};
+    const SIZE* measuredPointer = analysis != NULL ? ScriptString_pSize(analysis) : NULL;
+    if (measuredPointer != NULL) measured = *measuredPointer;
+
+    char previewPath[MAX_PATH];
+    BOOL saved = FALSE;
+    if (rendered && GetProxyDirectory(previewPath, MAX_PATH)) {
+        SIZE_T pathLength = (SIZE_T)lstrlenA(previewPath);
+        if (AppendText(previewPath, MAX_PATH, &pathLength, "thaifontfix-truetype-preview.bmp")) {
+            DWORD previewWidth = measured.cx > 0 ? (DWORD)measured.cx + 4 : width;
+            DWORD previewHeight = measured.cy > 0 ? (DWORD)measured.cy + 4 : height;
+            if (previewWidth > width) previewWidth = width;
+            if (previewHeight > height) previewHeight = height;
+            saved = SaveTrueTypePreviewBitmap(previewPath, pixels,
+                previewWidth, previewHeight, width);
+        }
+    }
+
+    if (analysis != NULL) ScriptStringFree(&analysis);
+    if (oldFont != NULL) SelectObject(dc, oldFont);
+    if (font != NULL) DeleteObject(font);
+    if (oldBitmap != NULL) SelectObject(dc, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+
+    if (saved && InterlockedCompareExchange(&g_loggedTrueTypePreview, 1, 0) == 0) {
+        if (g_config.debugLog) {
+            char message[2048];
+            SIZE_T used = 0;
+            char value[16];
+            wsprintfA(message,
+                "ThaiFontFix: Uniscribe CP874 preview saved font=%s characters=%d size=%ldx%ld path=%s cp874=",
+                fontFace, length, (long)measured.cx, (long)measured.cy, previewPath);
+            used = (SIZE_T)lstrlenA(message);
+            for (int i = 0; i < length && used < sizeof(message); ++i) {
+                wsprintfA(value, "%02X", (unsigned)cp874[i]);
+                if (!AppendText(message, sizeof(message), &used, value)) break;
+            }
+            if (AppendText(message, sizeof(message), &used, " unicode=")) {
+                for (int i = 0; i < wideLength && used < sizeof(message); ++i) {
+                    wsprintfA(value, "U+%04X", (unsigned)unicode[i]);
+                    if (!AppendText(message, sizeof(message), &used, value)) break;
+                }
+            }
+            WriteDebugDiagnostic(message);
+        }
+    }
+}
+
+static DWORD GetTrueTypeFontHeight(void* font) {
+    if (font == NULL || !IsReadableRange((BYTE*)font + 4, sizeof(BYTE*))) {
+        return GetConfiguredTrueTypeFontHeight(16);
+    }
+    BYTE* data = *(BYTE**)((BYTE*)font + 4);
+    if (data == NULL) return GetConfiguredTrueTypeFontHeight(16);
+    if (!IsReadableRange(data + 8, sizeof(DWORD))) return GetConfiguredTrueTypeFontHeight(16);
+    DWORD height = *(DWORD*)(data + 8);
+    return GetConfiguredTrueTypeFontHeight(height);
+}
+
+static void InitializeTrueTypeRun(TrueTypeRenderRun* run, void* font,
+    short* text, int x, int y, int maxWidth, int maxHeight) {
+    ZeroMemory(run, sizeof(*run));
+    if (!g_config.trueTypeRender) return;
+    run->enabled = TRUE;
+    run->valid = TRUE;
+    if (text == NULL) {
+        InvalidateTrueTypeRun(run, "null input string");
+        return;
+    }
+    BOOL terminated = FALSE;
+    for (DWORD i = 0; i < sizeof(run->expectedCodes); ++i) {
+        short value = 0;
+        if (!IsReadableRange(text + i, sizeof(short)) ||
+            !CopyMemorySafely(&value, text + i, sizeof(value))) {
+            InvalidateTrueTypeRun(run, "input string is unreadable");
+            return;
+        }
+        if (value == 0) {
+            terminated = TRUE;
+            break;
+        }
+        if (value == '\r' || value == '\n') continue;
+        if (value < 0x20 || value == 0x7f || value > 0xff) {
+            run->failureCodeUnit = (unsigned)(unsigned short)value;
+            InvalidateTrueTypeRun(run, "unsupported input code unit");
+            return;
+        }
+        run->expectedCodes[run->expectedGlyphCount++] = (BYTE)value;
+    }
+    if (!terminated || run->expectedGlyphCount == sizeof(run->expectedCodes)) {
+        InvalidateTrueTypeRun(run, "input string is unterminated or too long");
+        return;
+    }
+    run->fontHeight = GetTrueTypeFontHeight(font);
+    run->boxX = x - 16;
+    run->boxY = y - 4;
+    run->boxWidth = maxWidth > 0 && maxWidth <= 4096 ? maxWidth + 32 : 1056;
+    run->boxHeight = maxHeight > 0 && maxHeight <= 512 ? maxHeight + 8 : 136;
+}
+
+static DWORD GetRuntimeGlyphWidth(void* font, unsigned short code, DWORD fontHeight) {
+    if (font == NULL || code > 0xff || !IsReadableRange((BYTE*)font + 4, sizeof(BYTE*))) {
+        return fontHeight / 2;
+    }
+    BYTE* data = *(BYTE**)((BYTE*)font + 4);
+    if (data == NULL) return fontHeight / 2;
+    if (!IsReadableRange(data, 0x24)) return fontHeight / 2;
+    DWORD stride = *(DWORD*)(data + 0x14);
+    WORD* map = *(WORD**)(data + 0x18);
+    BYTE* records = *(BYTE**)(data + 0x1c);
+    DWORD count = *(DWORD*)(data + 0x20);
+    if (stride < 1 || stride > 128 || map == NULL || records == NULL || count == 0 || count > 0x10000 ||
+        !IsReadableRange(map + code, sizeof(WORD))) return fontHeight / 2;
+    WORD entry = map[code];
+    if (entry == 0 || entry > count) return 0;
+    BYTE* record = records + (SIZE_T)(entry - 1) * stride;
+    if (!IsReadableRange(record, 1)) return fontHeight / 2;
+    BYTE width = record[0];
+    return width <= 64 ? width : fontHeight / 2;
+}
+
+static void CaptureTrueTypeBackground(TrueTypeRenderRun* run, void* font,
+    int glyphX, int glyphY) {
+    if (run == NULL || !run->enabled || !run->valid || run->captured) return;
+    if (font == NULL || !IsReadableRange((BYTE*)font + 0x0c, sizeof(WORD*)) ||
+        !IsReadableRange((BYTE*)font + 0x10, sizeof(DWORD))) {
+        InvalidateTrueTypeRun(run, "surface fields are unreadable");
+        return;
+    }
+
+    WORD* surface = *(WORD**)((BYTE*)font + 0x0c);
+    DWORD pitchWords = *(DWORD*)((BYTE*)font + 0x10);
+    if (surface == NULL || pitchWords == 0 || pitchWords > 8192) {
+        InvalidateTrueTypeRun(run, "surface pointer or pitch is invalid");
+        return;
+    }
+
+    RECT clip;
+    if (!IsReadableRange((BYTE*)font + 0x30, sizeof(clip)) ||
+        !CopyMemorySafely(&clip, (BYTE*)font + 0x30, sizeof(clip)) ||
+        clip.left < 0 || clip.top < 0 || clip.right < clip.left || clip.bottom < clip.top ||
+        clip.right >= (LONG)pitchWords) {
+        InvalidateTrueTypeRun(run, "surface clip is invalid");
+        return;
+    }
+
+    int left = run->boxX;
+    int top = run->boxY;
+    int right = left + run->boxWidth;
+    int bottom = top + run->boxHeight;
+    if (glyphX < left) left = glyphX - 8;
+    if (glyphY < top) top = glyphY - 2;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (left < clip.left) left = clip.left;
+    if (top < clip.top) top = clip.top;
+    if (right > clip.right + 1) right = clip.right + 1;
+    if (bottom > clip.bottom + 1) bottom = clip.bottom + 1;
+    if (right > (int)pitchWords) right = (int)pitchWords;
+    if (bottom <= top || right <= left || right - left > 4096 || bottom - top > 512) {
+        InvalidateTrueTypeRun(run, "capture rectangle is invalid");
+        return;
+    }
+
+    if (right <= left || bottom <= top || right - left > 4096 || bottom - top > 512) {
+        InvalidateTrueTypeRun(run, "capture rectangle is invalid");
+        return;
+    }
+
+    DWORD width = (DWORD)(right - left);
+    DWORD height = (DWORD)(bottom - top);
+    SIZE_T rowBytes = (SIZE_T)width * sizeof(WORD);
+    SIZE_T backupBytes = rowBytes * height;
+    if (backupBytes == 0 || backupBytes > 4 * 1024 * 1024) {
+        InvalidateTrueTypeRun(run, "capture rectangle is too large");
+        return;
+    }
+    WORD* background = (WORD*)HeapAlloc(GetProcessHeap(), 0, backupBytes);
+    if (background == NULL) {
+        InvalidateTrueTypeRun(run, "capture buffer allocation failed");
+        return;
+    }
+    for (DWORD row = 0; row < height; ++row) {
+        WORD* source = surface + (SIZE_T)(top + (int)row) * pitchWords + left;
+        if (!IsReadableRange(source, rowBytes) || !IsWritableRange(source, rowBytes) ||
+            !CopyMemorySafely(background + (SIZE_T)row * width, source, rowBytes)) {
+            HeapFree(GetProcessHeap(), 0, background);
+            InvalidateTrueTypeRun(run, "surface pixels are unreadable");
+            return;
+        }
+    }
+
+    run->surface = surface;
+    run->pitchWords = pitchWords;
+    run->captureX = left;
+    run->captureY = top;
+    run->captureWidth = width;
+    run->captureHeight = height;
+    run->background = background;
+    run->captured = TRUE;
+}
+
+static BOOL ResolveTrueTypeColor(void* font, int color, int* resolved) {
+    if (resolved == NULL) return FALSE;
+    if (color != -1) {
+        if (color < 0 || color > 0xffff) return FALSE;
+        *resolved = color;
+        return TRUE;
+    }
+    if (font == NULL || !IsReadableRange((BYTE*)font + 0x24, sizeof(WORD))) return FALSE;
+    *resolved = *(WORD*)((BYTE*)font + 0x24);
+    return TRUE;
+}
+
+static void RecordTrueTypeGlyph(TrueTypeRenderRun* run, void* font,
+    unsigned short code, int x, int y, int color) {
+    if (run == NULL || !run->enabled || !run->valid) return;
+    run->sawGlyph = TRUE;
+    if (code < 0x20 || code > 0xff || code == 0x7f) {
+        run->failureCodeUnit = code;
+        InvalidateTrueTypeRun(run, "unsupported glyph code unit");
+        return;
+    }
+    if (run->seenGlyphCount >= run->expectedGlyphCount ||
+        run->expectedCodes[run->seenGlyphCount] != (BYTE)code) {
+        run->failureCodeUnit = code;
+        InvalidateTrueTypeRun(run, "glyph order does not match input string");
+        return;
+    }
+    int resolvedColor = 0;
+    if (!ResolveTrueTypeColor(font, color, &resolvedColor)) {
+        InvalidateTrueTypeRun(run, "glyph color is invalid");
+        return;
+    }
+    CaptureTrueTypeBackground(run, font, x, y);
+    if (!run->valid) return;
+
+    TrueTypeLine* line = NULL;
+    for (unsigned i = 0; i < run->lineCount; ++i) {
+        if (run->lines[i].y == y) {
+            line = &run->lines[i];
+            break;
+        }
+    }
+    if (line == NULL) {
+        if (run->lineCount >= sizeof(run->lines) / sizeof(run->lines[0])) {
+            InvalidateTrueTypeRun(run, "too many text lines");
+            return;
+        }
+        line = &run->lines[run->lineCount++];
+        ZeroMemory(line, sizeof(*line));
+        line->x = x;
+        line->y = y;
+        line->right = x;
+        line->color = resolvedColor;
+    }
+    if (line->length >= (int)sizeof(line->cp874)) {
+        InvalidateTrueTypeRun(run, "text line is too long");
+        return;
+    }
+    line->cp874[line->length] = (BYTE)code;
+    line->glyphColors[line->length] = (WORD)resolvedColor;
+    ++line->length;
+    ++run->seenGlyphCount;
+
+    int spacing = 0;
+    if (IsReadableRange((BYTE*)font + 0x2c, sizeof(int))) spacing = *(int*)((BYTE*)font + 0x2c);
+    if (spacing < 0 || spacing > 32) spacing = 0;
+    int right = x + (int)GetRuntimeGlyphWidth(font, code, run->fontHeight) + spacing;
+    if (right > line->right) line->right = right;
+}
+
+static BOOL CreateTrueTypeLineMask(TrueTypeLine* line, DWORD fontHeight) {
+    if (line == NULL || line->length <= 0) return FALSE;
+    WCHAR unicode[256];
+    int wideLength = MultiByteToWideChar(874, 0, (LPCCH)line->cp874,
+        line->length, unicode, (int)(sizeof(unicode) / sizeof(unicode[0])));
+    if (wideLength <= 0 || wideLength > (int)(sizeof(unicode) / sizeof(unicode[0]))) return FALSE;
+
+    DWORD targetWidth = line->right - line->x;
+    if (targetWidth < 1) targetWidth = (DWORD)line->length * fontHeight / 2;
+    DWORD width = (DWORD)line->length * fontHeight * 2 + 16;
+    if (width < targetWidth + 16) width = targetWidth + 16;
+    if (width < 64) width = 64;
+    if (width > 8192) return FALSE;
+    DWORD height = fontHeight + 8;
+    if (height < 16) height = 16;
+    if (height > 128) return FALSE;
+
+    HDC dc = CreateCompatibleDC(NULL);
+    if (dc == NULL) return FALSE;
+    BITMAPINFO bitmapInfo;
+    ZeroMemory(&bitmapInfo, sizeof(bitmapInfo));
+    bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biWidth = (LONG)width;
+    bitmapInfo.bmiHeader.biHeight = -(LONG)height;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biBitCount = 32;
+    bitmapInfo.bmiHeader.biCompression = BI_RGB;
+    BYTE* pixels = NULL;
+    HBITMAP bitmap = CreateDIBSection(dc, &bitmapInfo, DIB_RGB_COLORS,
+        (void**)&pixels, NULL, 0);
+    if (bitmap == NULL || pixels == NULL) {
+        if (bitmap != NULL) DeleteObject(bitmap);
+        DeleteDC(dc);
+        return FALSE;
+    }
+    HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
+    if (oldBitmap == NULL || oldBitmap == HGDI_ERROR) {
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+        return FALSE;
+    }
+    ZeroMemory(pixels, (SIZE_T)width * height * 4);
+    char fontFace[LF_FACESIZE];
+    CopyMemory(fontFace, g_config.trueTypeFont, sizeof(fontFace));
+    fontFace[LF_FACESIZE - 1] = 0;
+    HFONT font = CreateFontA(-(int)fontHeight, 0, 0, 0, GetTrueTypeFontWeight(),
+        IsTrueTypeFontItalic(), FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        NONANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, fontFace);
+    HFONT oldFont = font != NULL ? (HFONT)SelectObject(dc, font) : NULL;
+    if (font == NULL || oldFont == NULL || oldFont == (HFONT)HGDI_ERROR) {
+        if (oldFont != NULL && oldFont != (HFONT)HGDI_ERROR) SelectObject(dc, oldFont);
+        if (font != NULL) DeleteObject(font);
+        SelectObject(dc, oldBitmap);
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+        return FALSE;
+    }
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255, 255, 255));
+    SetTextAlign(dc, TA_LEFT | TA_TOP | TA_NOUPDATECP);
+
+    SCRIPT_STRING_ANALYSIS analysis = NULL;
+    HRESULT analyzed = ScriptStringAnalyse(dc, unicode, wideLength, wideLength * 3 + 16,
+        -1, SSA_GLYPHS | SSA_FALLBACK, 0, NULL, NULL, NULL, NULL, NULL, &analysis);
+    BOOL rendered = analyzed == S_OK && analysis != NULL &&
+        ScriptStringOut(analysis, 2, 2, 0, NULL, 0, 0, FALSE) == S_OK;
+    SIZE measured = {0, 0};
+    const SIZE* measuredPointer = analysis != NULL ? ScriptString_pSize(analysis) : NULL;
+    if (measuredPointer != NULL) measured = *measuredPointer;
+    BOOL positionsValid = rendered && wideLength == line->length;
+    for (int i = 0; positionsValid && i < line->length; ++i) {
+        int leading = 0;
+        int trailing = 0;
+        if (ScriptStringCPtoX(analysis, i, FALSE, &leading) != S_OK ||
+            ScriptStringCPtoX(analysis, i, TRUE, &trailing) != S_OK ||
+            leading < -32768 || leading > 32767 || trailing < -32768 || trailing > 32767) {
+            positionsValid = FALSE;
+            break;
+        }
+        line->characterStarts[i] = (SHORT)leading;
+        line->characterEnds[i] = (SHORT)trailing;
+    }
+    if (analysis != NULL) ScriptStringFree(&analysis);
+
+    BOOL success = FALSE;
+    if (positionsValid && measured.cx > 0 && measured.cy > 0 &&
+        (DWORD)measured.cx + 2 < width && (DWORD)measured.cy + 2 < height) {
+        SIZE_T maskBytes = (SIZE_T)width * height;
+        line->mask = (BYTE*)HeapAlloc(GetProcessHeap(), 0, maskBytes);
+        if (line->mask != NULL) {
+            for (SIZE_T i = 0; i < maskBytes; ++i) {
+                BYTE* pixel = pixels + i * 4;
+                line->mask[i] = (pixel[0] > 96 || pixel[1] > 96 || pixel[2] > 96) ? 1 : 0;
+            }
+            line->maskWidth = width;
+            line->maskHeight = height;
+            line->maskContentWidth = (DWORD)measured.cx;
+            line->maskContentHeight = (DWORD)measured.cy;
+            success = TRUE;
+        }
+    }
+
+    SelectObject(dc, oldFont);
+    DeleteObject(font);
+    SelectObject(dc, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    return success;
+}
+
+static BOOL CompleteTrueTypeRun(TrueTypeRenderRun* run) {
+    if (run == NULL || !run->enabled) return FALSE;
+    if (!run->valid) return FALSE;
+    if (!run->captured) {
+        InvalidateTrueTypeRun(run, "text surface was not captured");
+        return FALSE;
+    }
+    if (run->lineCount == 0) {
+        InvalidateTrueTypeRun(run, "text run contains no drawable lines");
+        return FALSE;
+    }
+    for (unsigned i = 0; i < run->lineCount; ++i) {
+        if (!CreateTrueTypeLineMask(&run->lines[i], run->fontHeight)) {
+            InvalidateTrueTypeRun(run, "Uniscribe/GDI text mask creation failed");
+            for (unsigned j = 0; j < run->lineCount; ++j) {
+                if (run->lines[j].mask != NULL) HeapFree(GetProcessHeap(), 0, run->lines[j].mask);
+                run->lines[j].mask = NULL;
+            }
+            return FALSE;
+        }
+    }
+
+    SIZE_T rowBytes = (SIZE_T)run->captureWidth * sizeof(WORD);
+    SIZE_T backupBytes = rowBytes * run->captureHeight;
+    run->bitmapRendered = (WORD*)HeapAlloc(GetProcessHeap(), 0, backupBytes);
+    if (run->bitmapRendered == NULL) {
+        InvalidateTrueTypeRun(run, "surface backup allocation failed");
+        return FALSE;
+    }
+    for (DWORD row = 0; row < run->captureHeight; ++row) {
+        WORD* source = run->surface + (SIZE_T)(run->captureY + (int)row) * run->pitchWords + run->captureX;
+        if (!IsReadableRange(source, rowBytes) || !IsWritableRange(source, rowBytes) ||
+            !CopyMemorySafely(run->bitmapRendered + (SIZE_T)row * run->captureWidth, source, rowBytes)) {
+            HeapFree(GetProcessHeap(), 0, run->bitmapRendered);
+            run->bitmapRendered = NULL;
+            InvalidateTrueTypeRun(run, "surface backup read failed");
+            return FALSE;
+        }
+    }
+
+    BOOL wrotePixels = TRUE;
+    __try {
+        for (DWORD row = 0; row < run->captureHeight; ++row) {
+            WORD* destination = run->surface + (SIZE_T)(run->captureY + (int)row) * run->pitchWords + run->captureX;
+            CopyMemory(destination, run->background + (SIZE_T)row * run->captureWidth, rowBytes);
+        }
+        for (unsigned i = 0; i < run->lineCount; ++i) {
+            TrueTypeLine* line = &run->lines[i];
+            DWORD sourceWidth = line->maskContentWidth;
+            DWORD sourceHeight = line->maskContentHeight;
+            // Keep the GDI/Uniscribe advance. Stretching the entire scratch
+            // bitmap to the game's narrower FNT width smears or drops strokes.
+            DWORD targetWidth = sourceWidth;
+            if (targetWidth == 0 || targetWidth > 4096) continue;
+            WORD colorByX[4096];
+            for (DWORD x = 0; x < targetWidth; ++x) colorByX[x] = (WORD)line->color;
+            for (int character = 0; character < line->length; ++character) {
+                int left = line->characterStarts[character];
+                int right = line->characterEnds[character];
+                if (left > right) {
+                    int temporary = left;
+                    left = right;
+                    right = temporary;
+                }
+                if (left < 0) left = 0;
+                if (right > (int)targetWidth) right = (int)targetWidth;
+                for (int x = left; x < right; ++x) {
+                    colorByX[x] = line->glyphColors[character];
+                }
+            }
+            for (DWORD y = 0; y < run->fontHeight; ++y) {
+                DWORD sourceY = 2 + (DWORD)((SIZE_T)y * sourceHeight / run->fontHeight);
+                if (sourceY >= line->maskHeight) continue;
+                int targetY = line->y + (int)y;
+                if (targetY < run->captureY || targetY >= run->captureY + (int)run->captureHeight) continue;
+                for (DWORD x = 0; x < targetWidth; ++x) {
+                    DWORD sourceX = 2 + x;
+                    if (sourceX >= line->maskWidth || line->mask[(SIZE_T)sourceY * line->maskWidth + sourceX] == 0) continue;
+                    int targetX = line->x + (int)x;
+                    if (targetX < run->captureX || targetX >= run->captureX + (int)run->captureWidth) continue;
+                    run->surface[(SIZE_T)targetY * run->pitchWords + targetX] = colorByX[x];
+                }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        wrotePixels = FALSE;
+        InvalidateTrueTypeRun(run, "surface became invalid while drawing");
+        __try {
+            for (DWORD row = 0; row < run->captureHeight; ++row) {
+                WORD* destination = run->surface + (SIZE_T)(run->captureY + (int)row) * run->pitchWords + run->captureX;
+                CopyMemory(destination, run->bitmapRendered + (SIZE_T)row * run->captureWidth, rowBytes);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Surface memory became invalid while drawing; no safe recovery is possible.
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, run->bitmapRendered);
+    run->bitmapRendered = NULL;
+
+    if (wrotePixels && InterlockedCompareExchange(&g_loggedTrueTypeRender, 1, 0) == 0 && g_config.debugLog) {
+        char message[256];
+        DWORD measuredWidth = run->lineCount != 0 ? run->lines[0].maskContentWidth : 0;
+        int gameWidth = run->lineCount != 0 ? run->lines[0].right - run->lines[0].x : 0;
+        wsprintfA(message,
+            "ThaiFontFix: live TrueType text rendered font=%s style=%s size=%lu px lines=%u first-line=%lu px (game advance=%d px)",
+            g_config.trueTypeFont, GetTrueTypeFontStyleName(), (unsigned long)run->fontHeight,
+            run->lineCount, (unsigned long)measuredWidth, gameWidth);
+        WriteDebugDiagnostic(message);
+    }
+    return wrotePixels;
+}
+
+static void LogTrueTypeFallbackIfNeeded(TrueTypeRenderRun* run, BOOL rendered) {
+    if (run == NULL || !run->enabled || run->fallbackLogged || rendered || !g_config.debugLog ||
+        (!run->sawGlyph && run->expectedGlyphCount == 0 && run->failureReason == NULL)) return;
+    run->fallbackLogged = TRUE;
+    LONG logIndex = InterlockedIncrement(&g_loggedTrueTypeRenderFallback);
+    if (logIndex > 8) return;
+    char message[320];
+    const char* reason = run->failureReason;
+    if (reason == NULL) {
+        if (run->seenGlyphCount == 0) {
+            reason = "no glyph callbacks matched this text context";
+        } else if (run->seenGlyphCount < run->expectedGlyphCount) {
+            reason = "glyph callbacks ended before the full text run";
+        } else {
+            reason = "run did not complete";
+        }
+    }
+    wsprintfA(message,
+        "ThaiFontFix: TrueType fallback #%lu: %s (glyphs=%lu/%lu size=%lu px code=0x%04X)",
+        (unsigned long)logIndex, reason, (unsigned long)run->seenGlyphCount,
+        (unsigned long)run->expectedGlyphCount, (unsigned long)run->fontHeight,
+        run->failureCodeUnit);
+    WriteDebugDiagnostic(message);
+}
+
+static void CleanupTrueTypeRun(TrueTypeRenderRun* run) {
+    if (run == NULL) return;
+    if (run->background != NULL) HeapFree(GetProcessHeap(), 0, run->background);
+    run->background = NULL;
+    if (run->bitmapRendered != NULL) HeapFree(GetProcessHeap(), 0, run->bitmapRendered);
+    run->bitmapRendered = NULL;
+    for (unsigned i = 0; i < run->lineCount; ++i) {
+        if (run->lines[i].mask != NULL) HeapFree(GetProcessHeap(), 0, run->lines[i].mask);
+        run->lines[i].mask = NULL;
+    }
+}
+
+static BOOL EnsureTrueTypeConfiguration(const char* path) {
+    if (path == NULL || path[0] == 0) return FALSE;
+#if THAI_FONT_FIX_BINK_TRUETYPE_RENDER_DEFAULT
+    const char* defaultRender = "1";
+#else
+    const char* defaultRender = "0";
+#endif
+    static const char missingValue[] = "__THAIFONTFIX_MISSING_6F4D7A__";
+    const char* keys[] = { "Render", "Font", "Style", "Preview", "Size" };
+    const char* defaults[] = { defaultRender, "Arial", "Regular", "0", "0" };
+    BOOL added = FALSE;
+    for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+        char value[64];
+        GetPrivateProfileStringA("TrueType", keys[i], missingValue,
+            value, sizeof(value), path);
+        if (lstrcmpA(value, missingValue) != 0 && value[0] != 0) continue;
+        if (!WritePrivateProfileStringA("TrueType", keys[i], defaults[i], path)) {
+            return FALSE;
+        }
+        added = TRUE;
+    }
+    g_trueTypeDefaultsAdded = added;
+    return TRUE;
+}
+#endif
+
 static void LoadConfiguration(void) {
     char path[MAX_PATH];
     path[0] = 0;
@@ -435,6 +1241,12 @@ static void LoadConfiguration(void) {
         WriteDebugDiagnostic("ThaiFontFix: unable to construct the proxy-specific configuration path");
         return;
     }
+
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    if (!EnsureTrueTypeConfiguration(path)) {
+        OutputDebugStringA("ThaiFontFix: could not add missing TrueType defaults to thaifontfix.ini\n");
+    }
+#endif
 
     DWORD attributes = GetFileAttributesA(path);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
@@ -452,12 +1264,45 @@ static void LoadConfiguration(void) {
     if (g_config.maxExtraSpacing < 0) g_config.maxExtraSpacing = 0;
     if (g_config.maxExtraSpacing > 8) g_config.maxExtraSpacing = 8;
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    g_config.trueTypePreview = GetPrivateProfileIntA("TrueType", "Preview", 0, path) != 0;
+    // The standalone Bink test build can enable the replacement by default;
+    // regular release and installer builds remain opt-in.
+    g_config.trueTypeRender = GetPrivateProfileIntA("TrueType", "Render",
+        THAI_FONT_FIX_BINK_TRUETYPE_RENDER_DEFAULT, path) != 0;
+    GetPrivateProfileStringA("TrueType", "Font", "Arial",
+        g_config.trueTypeFont, LF_FACESIZE, path);
+    g_config.trueTypeFont[LF_FACESIZE - 1] = 0;
+    if (g_config.trueTypeFont[0] == 0) lstrcpyA(g_config.trueTypeFont, "Arial");
+    char fontStyle[32];
+    GetPrivateProfileStringA("TrueType", "Style", "Regular", fontStyle,
+        sizeof(fontStyle), path);
+    if (lstrcmpiA(fontStyle, "Bold") == 0) {
+        g_config.trueTypeStyle = TRUE_TYPE_STYLE_BOLD;
+    } else if (lstrcmpiA(fontStyle, "Italic") == 0) {
+        g_config.trueTypeStyle = TRUE_TYPE_STYLE_ITALIC;
+    } else if (lstrcmpiA(fontStyle, "BoldItalic") == 0 ||
+        lstrcmpiA(fontStyle, "Bold Italic") == 0) {
+        g_config.trueTypeStyle = TRUE_TYPE_STYLE_BOLD_ITALIC;
+    } else {
+        g_config.trueTypeStyle = TRUE_TYPE_STYLE_REGULAR;
+    }
+    g_config.trueTypeSize = (int)GetPrivateProfileIntA("TrueType", "Size", 0, path);
+    if (g_config.trueTypeSize != 0 &&
+        (g_config.trueTypeSize < 8 || g_config.trueTypeSize > 64)) {
+        g_config.trueTypeSize = 0;
+    }
+#endif
+
 #if defined(THAI_FONT_PROXY_DDRAW)
     GetPrivateProfileStringA("Proxy", "CustomDll", "ddraw-custom.dll",
         g_customDdrawSetting, MAX_PATH, path);
 #endif
 
     if (g_config.debugLog) {
+        if (!ClearDebugLog()) {
+            OutputDebugStringA("ThaiFontFix: could not clear thaifontfix.log at startup\n");
+        }
         char proxyPath[MAX_PATH];
         DWORD proxyLength = GetModuleFileNameA(g_selfModule, proxyPath, MAX_PATH);
         if (proxyLength != 0 && proxyLength < MAX_PATH) LogPath("ThaiFontFix: proxy module: ", proxyPath);
@@ -465,6 +1310,29 @@ static void LoadConfiguration(void) {
         WriteDebugDiagnostic(g_config.enabled
             ? "ThaiFontFix: configuration loaded; font fix enabled"
             : "ThaiFontFix: configuration loaded; font fix disabled");
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+        if (g_config.trueTypePreview) {
+            char message[LF_FACESIZE + 96];
+            wsprintfA(message, "ThaiFontFix: Bink TrueType preview enabled; font=%s style=%s",
+                g_config.trueTypeFont, GetTrueTypeFontStyleName());
+            WriteDebugDiagnostic(message);
+        }
+        if (g_config.trueTypeRender) {
+            char message[LF_FACESIZE + 160];
+            char sizeLabel[24];
+            if (g_config.trueTypeSize == 0) {
+                lstrcpyA(sizeLabel, "game height");
+            } else {
+                wsprintfA(sizeLabel, "%d px", g_config.trueTypeSize);
+            }
+            wsprintfA(message, "ThaiFontFix: Bink live TrueType rendering enabled for all text; font=%s style=%s size=%s",
+                g_config.trueTypeFont, GetTrueTypeFontStyleName(), sizeLabel);
+            WriteDebugDiagnostic(message);
+        }
+        if (g_trueTypeDefaultsAdded) {
+            WriteDebugDiagnostic("ThaiFontFix: added missing TrueType defaults to thaifontfix.ini");
+        }
+#endif
     }
 }
 
@@ -795,6 +1663,15 @@ static LayoutContext* FindContextForFont(LayoutContext* context, void* font) {
     return NULL;
 }
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+static LayoutContext* FindTrueTypeContextForFont(LayoutContext* context, void* font) {
+    for (; context != NULL; context = context->previous) {
+        if (context->font == font && context->trueType.enabled) return context;
+    }
+    return NULL;
+}
+#endif
+
 static BOOL CanApplyMetrics(const LayoutContext* context) {
     return g_config.enabled && context->state != NULL && context->spacing >= 0 &&
            context->spacing <= g_config.maxExtraSpacing &&
@@ -1006,6 +1883,10 @@ extern "C" int __stdcall ThaiLayoutHook(void* font, void* target, short* text,
     context.pendingToneY = 0;
     context.pendingToneColor = 0;
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    InitializeTrueTypeRun(&context.trueType, font, text, x, y, maxWidth, maxHeight);
+#endif
+
     LayoutContext* parentMetrics = context.state != NULL ? FindContextForData(context.previous, context.state->data) : NULL;
     LayoutContext* parentFont = FindContextForFont(context.previous, font);
     if (parentFont != NULL) context.spacing = parentFont->spacing;
@@ -1028,9 +1909,17 @@ extern "C" int __stdcall ThaiLayoutHook(void* font, void* target, short* text,
     }
     g_currentContext = &context;
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    TryCreateTrueTypePreview(text, context.state);
+#endif
+
     int result = original(font, target, text, x, y, maxWidth, maxHeight, flags, param9, param10);
 
     FlushPendingTone((RenderFunction)g_renderTrampoline, &context, FALSE);
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    LogTrueTypeFallbackIfNeeded(&context.trueType, context.trueType.rendered);
+    CleanupTrueTypeRun(&context.trueType);
+#endif
     g_currentContext = context.previous;
     RestoreMetrics(&context);
     if (parentMetrics != NULL) ApplyMetrics(parentMetrics);
@@ -1068,6 +1957,10 @@ extern "C" int __fastcall ThaiTextHook(void* font, void*, short* text,
     context.pendingToneY = 0;
     context.pendingToneColor = 0;
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    InitializeTrueTypeRun(&context.trueType, font, text, x, y, maxWidth, maxHeight);
+#endif
+
     if (context.state == NULL) {
         LogOnce(&g_loggedNoFontState,
             "ThaiFontFix: direct text hook reached, but this font has no usable Thai mark state");
@@ -1096,9 +1989,17 @@ extern "C" int __fastcall ThaiTextHook(void* font, void*, short* text,
     }
     g_currentContext = &context;
 
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    TryCreateTrueTypePreview(text, context.state);
+#endif
+
     int result = original(font, text, x, y, maxWidth, maxHeight);
 
     FlushPendingTone((RenderFunction)g_renderTrampoline, &context, FALSE);
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    LogTrueTypeFallbackIfNeeded(&context.trueType, context.trueType.rendered);
+    CleanupTrueTypeRun(&context.trueType);
+#endif
     g_currentContext = context.previous;
     RestoreMetrics(&context);
     if (parentMetrics != NULL) ApplyMetrics(parentMetrics);
@@ -1120,6 +2021,34 @@ extern "C" int __fastcall ThaiRenderHook(void* font, void*, unsigned short code,
         renderData = *(BYTE**)((BYTE*)font + 4);
         context = FindContextForData(g_currentContext, renderData);
     }
+#if defined(THAI_FONT_FIX_BINK_TRUETYPE)
+    LayoutContext* trueTypeContext = FindTrueTypeContextForFont(g_currentContext, font);
+    if (trueTypeContext == NULL && renderData != NULL) {
+        for (LayoutContext* item = g_currentContext; item != NULL; item = item->previous) {
+            if (item->trueType.enabled && item->font != NULL &&
+                IsReadableRange((BYTE*)item->font + 4, sizeof(BYTE*)) &&
+                *(BYTE**)((BYTE*)item->font + 4) == renderData) {
+                trueTypeContext = item;
+                break;
+            }
+        }
+    }
+    if (trueTypeContext != NULL) {
+        RecordTrueTypeGlyph(&trueTypeContext->trueType, font, code, x, y, color);
+        if (trueTypeContext->trueType.enabled) {
+            int result = original(font, code, x, y, color);
+            TrueTypeRenderRun* run = &trueTypeContext->trueType;
+            if (!run->completed && run->valid && run->expectedGlyphCount != 0 &&
+                run->seenGlyphCount == run->expectedGlyphCount) {
+                run->completed = TRUE;
+                run->rendered = CompleteTrueTypeRun(run);
+                LogTrueTypeFallbackIfNeeded(run, run->rendered);
+            }
+            LeaveCriticalSection(&g_fontLock);
+            return result;
+        }
+    }
+#endif
     if (context == NULL || context->state == NULL) {
         if (IsThaiMarkCode(code) &&
             InterlockedCompareExchange(&g_loggedNoLayoutContext, 1, 0) == 0 && g_config.debugLog) {

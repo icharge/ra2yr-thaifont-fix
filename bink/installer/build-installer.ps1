@@ -18,10 +18,6 @@ $gameRoot = if ([string]::IsNullOrWhiteSpace($GameDirectory)) {
 }
 
 $proxy = Join-Path $binkDirectory 'binkw32.dll'
-$proxyVersion = (Get-Item -LiteralPath $proxy).VersionInfo.FileVersion
-if ([string]::IsNullOrWhiteSpace($proxyVersion) -or $proxyVersion -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$') {
-    throw "The Bink proxy has no supported numeric file version: $proxyVersion"
-}
 $config = Join-Path $projectRoot 'thaifontfix.ini'
 $readme = Join-Path $installerDirectory 'ThaiFontFix_readme.txt'
 $defaultFont = Join-Path $installerDirectory 'assets\fonts\default\game.fnt'
@@ -40,6 +36,11 @@ if (-not $SkipProxyBuild) {
     }
 } else {
     Write-Warning 'Packaging the existing proxy without rebuilding it. Confirm it was built with the XP target toolset before distributing this setup.'
+}
+
+$proxyVersion = (Get-Item -LiteralPath $proxy).VersionInfo.FileVersion
+if ([string]::IsNullOrWhiteSpace($proxyVersion) -or $proxyVersion -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$') {
+    throw "The Bink proxy has no supported numeric file version: $proxyVersion"
 }
 
 foreach ($required in @($proxy, $config, $readme, $defaultFont, $definition, $script)) {
