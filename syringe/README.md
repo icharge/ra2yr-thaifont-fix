@@ -39,9 +39,9 @@ Restore verifies file hashes and leaves modified DLLs or sidecars untouched. It 
 
 ## Settings and diagnostics
 
-Both variants read the shared `thaifontfix.ini` and append diagnostics to `thaifontfix.log` beside the game executables.
+Both variants read the shared `thaifontfix.ini`. When `DebugLog=1`, they clear `thaifontfix.log` once when the game process starts, then append diagnostics beside the game executables and emit `OutputDebugString` messages.
 
-The shared template enables diagnostics by default. `Enabled` turns the fix on or off. `CenterMarks` controls horizontal mark positioning, `ToneMarkRaise` controls the vertical offset for stacked marks including Sara Am, and `MaxExtraSpacing` sets the maximum font spacing handled by the fix. Set `DebugLog=1` to write the shared log and OutputDebugString messages.
+Diagnostics are disabled by default. `Enabled` turns the fix on or off. `CenterMarks` controls horizontal mark positioning, `ToneMarkRaise` controls the vertical offset for stacked marks including Sara Am, and `MaxExtraSpacing` sets the maximum font spacing handled by the fix.
 
 Successful hook startup logs `font hooks installed`. When Thai text appears, look for layout/render hook messages, an accepted font state, and `Thai mark handled`. The detailed font format and CP874/Sara Am behavior are documented in [`../research-notes.md`](../research-notes.md) and [`../ddraw/README.md`](../ddraw/README.md).
 

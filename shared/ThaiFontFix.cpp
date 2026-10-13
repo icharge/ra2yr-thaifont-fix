@@ -28,11 +28,8 @@ struct FontFixConfig {
     int maxExtraSpacing;
 };
 
-#if defined(THAI_FONT_PROXY_WINMM) || defined(THAI_FONT_FIX_INTEGRATED)
-static FontFixConfig g_config = { TRUE, TRUE, TRUE, 2, 8 };
-#else
 static FontFixConfig g_config = { TRUE, TRUE, FALSE, 2, 8 };
-#endif
+static HANDLE g_debugLogInitMutex;
 static volatile LONG g_runtimeInit;
 
 static CRITICAL_SECTION g_fontLock;
@@ -219,6 +216,49 @@ static BOOL GetProxyDirectory(char* path, SIZE_T capacity) {
 
 static void LogPath(const char* label, const char* value);
 static void WriteDebugDiagnostic(const char* message);
+static BOOL GetProxyConfigurationPath(char* path, SIZE_T capacity);
+
+static BOOL GetDebugLogPath(char* path, SIZE_T capacity) {
+    if (!GetProxyConfigurationPath(path, capacity)) return FALSE;
+    SIZE_T length = (SIZE_T)lstrlenA(path);
+    if (length < 4) return FALSE;
+    path[length - 3] = 'l';
+    path[length - 2] = 'o';
+    path[length - 1] = 'g';
+    return TRUE;
+}
+
+static void ClearDebugLogOnce(void) {
+    if (g_debugLogInitMutex != NULL) return;
+
+    char path[MAX_PATH];
+    if (!GetDebugLogPath(path, MAX_PATH)) return;
+
+    DWORD pathHash = 2166136261u;
+    for (const unsigned char* cursor = (const unsigned char*)path; *cursor != 0; ++cursor) {
+        unsigned char value = *cursor;
+        if (value >= 'A' && value <= 'Z') value = (unsigned char)(value + ('a' - 'A'));
+        pathHash = (pathHash ^ value) * 16777619u;
+    }
+
+    char mutexName[96];
+    wsprintfA(mutexName, "Local\\ThaiFontFixLogInit-%lu-%08lX",
+        (unsigned long)GetCurrentProcessId(), (unsigned long)pathHash);
+    HANDLE mutex = CreateMutexA(NULL, FALSE, mutexName);
+    if (mutex != NULL) {
+        if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            CloseHandle(mutex);
+            return;
+        }
+        // Keep the named object alive so other integrations in this process
+        // do not clear the same log again during their own initialization.
+        g_debugLogInitMutex = mutex;
+    }
+
+    HANDLE logFile = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (logFile != INVALID_HANDLE_VALUE) CloseHandle(logFile);
+}
 
 static BOOL TryLoadMatchingGameFntRecords(WORD* runtimeMap, DWORD height, DWORD stride,
     DWORD count, BYTE* destination, SIZE_T recordsSize) {
@@ -343,12 +383,7 @@ static void WriteDebugDiagnostic(const char* message) {
     if (!g_config.debugLog || message == NULL) return;
 
     char path[MAX_PATH];
-    if (!GetProxyConfigurationPath(path, MAX_PATH)) return;
-    SIZE_T length = (SIZE_T)lstrlenA(path);
-    if (length < 4) return;
-    path[length - 3] = 'l';
-    path[length - 2] = 'o';
-    path[length - 1] = 'g';
+    if (!GetDebugLogPath(path, MAX_PATH)) return;
 
     HANDLE logFile = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
         NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -428,6 +463,16 @@ static void LogPath(const char* label, const char* value) {
     WriteDebugDiagnostic(message);
 }
 
+static void EnsureConfigurationValue(const char* section, const char* key,
+    const char* defaultValue, const char* path) {
+    char existingValue[64];
+    existingValue[0] = 0;
+    if (GetPrivateProfileStringA(section, key, NULL, existingValue,
+        sizeof(existingValue), path) == 0) {
+        WritePrivateProfileStringA(section, key, defaultValue, path);
+    }
+}
+
 static void LoadConfiguration(void) {
     char path[MAX_PATH];
     path[0] = 0;
@@ -436,11 +481,14 @@ static void LoadConfiguration(void) {
         return;
     }
 
-    DWORD attributes = GetFileAttributesA(path);
-    if (attributes == INVALID_FILE_ATTRIBUTES) {
-        LogPath("ThaiFontFix: configuration file not found: ", path);
-        return;
-    }
+    EnsureConfigurationValue("FontFix", "Enabled", "1", path);
+    EnsureConfigurationValue("FontFix", "CenterMarks", "1", path);
+    EnsureConfigurationValue("FontFix", "ToneMarkRaise", "2", path);
+    EnsureConfigurationValue("FontFix", "MaxExtraSpacing", "8", path);
+    EnsureConfigurationValue("FontFix", "DebugLog", "0", path);
+#if defined(THAI_FONT_PROXY_DDRAW)
+    EnsureConfigurationValue("Proxy", "CustomDll", "ddraw-custom.dll", path);
+#endif
 
     g_config.enabled = GetPrivateProfileIntA("FontFix", "Enabled", 1, path) != 0;
     g_config.centerMarks = GetPrivateProfileIntA("FontFix", "CenterMarks", 1, path) != 0;
@@ -458,6 +506,7 @@ static void LoadConfiguration(void) {
 #endif
 
     if (g_config.debugLog) {
+        ClearDebugLogOnce();
         char proxyPath[MAX_PATH];
         DWORD proxyLength = GetModuleFileNameA(g_selfModule, proxyPath, MAX_PATH);
         if (proxyLength != 0 && proxyLength < MAX_PATH) LogPath("ThaiFontFix: proxy module: ", proxyPath);
