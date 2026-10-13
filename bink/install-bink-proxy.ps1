@@ -92,7 +92,7 @@ foreach ($filePath in @($target, $realDll, $oldTlbDll, $legacyRealDll, $proxyRec
     }
 }
 
-$gameProcesses = @(Get-Process -Name @('RA2MD', 'GameMD', 'gamemd', 'gamemdpatch', 'game', 'Syringe') -ErrorAction SilentlyContinue)
+$gameProcesses = @(Get-Process -Name @('RA2MD', 'GameMD', 'gamemd', 'game', 'Syringe') -ErrorAction SilentlyContinue)
 if ($gameProcesses.Count -gt 0) {
     $names = ($gameProcesses | Select-Object -ExpandProperty ProcessName -Unique) -join ', '
     throw "Close RA2/Yuri's Revenge and Syringe before changing binkw32.dll. Still running: $names"

@@ -11,7 +11,7 @@ $proxyRecord = Join-Path $gameRoot 'winmm-thaifnt-proxy.dll'
 $stage = Join-Path $gameRoot 'winmm.dll.thaifnt-staging'
 $recordStage = Join-Path $gameRoot 'winmm-thaifnt-proxy.staging'
 
-$running = Get-Process -Name @('game', 'GameMD', 'gamemd', 'gamemdpatch') -ErrorAction SilentlyContinue
+$running = Get-Process -Name @('game', 'GameMD', 'gamemd') -ErrorAction SilentlyContinue
 if ($running) {
     throw 'Close the game before installing or restoring the WinMM proxy.'
 }

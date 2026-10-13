@@ -33,7 +33,7 @@ function Get-VariantFiles([string]$Name) {
     )
 }
 
-$running = @(Get-Process -Name @('RA2MD', 'GameMD', 'gamemd', 'gamemdpatch', 'game', 'Syringe') -ErrorAction SilentlyContinue)
+$running = @(Get-Process -Name @('RA2MD', 'GameMD', 'gamemd', 'game', 'Syringe') -ErrorAction SilentlyContinue)
 if ($running.Count -gt 0) {
     $names = ($running | Select-Object -ExpandProperty ProcessName -Unique) -join ', '
     throw "Close RA2/Yuri's Revenge and Syringe before installing or restoring. Still running: $names"

@@ -1,8 +1,8 @@
 # Reverse-engineering notes
 
 - Ghidra 12.1.4 was run from `C:\app\reverse-tools` on the supplied x86 executables.
-- Text layout: `game.exe` VA `0x00432490`; `GameMD.exe` / `gamemdpatch.exe` VA `0x00434CD0`.
-- Glyph renderer: `game.exe` VA `0x004318E0`; `GameMD.exe` / `gamemdpatch.exe` VA `0x00434120`.
+- Text layout: `game.exe` VA `0x00432490`; `gamemd.exe` VA `0x00434CD0`.
+- Glyph renderer: `game.exe` VA `0x004318E0`; `gamemd.exe` VA `0x00434120`.
 - Layout measures `glyph width + font spacing` and passes characters to the renderer. The renderer reads the width byte from a fixed-stride bitmap record and returns the next x coordinate.
 - The layout routine uses `stdcall` and returns with `ret 0x28`; the renderer uses `thiscall` and returns with `ret 0x10`. The DLL shims preserve both stack-cleanup conventions.
 - The font object points to parsed FNT data at `+0x04`; its spacing is at `+0x2c`. Parsed FNT data stores height at `+0x08`, record stride at `+0x14`, a 65,536-entry 16-bit glyph map at `+0x18`, glyph records at `+0x1c`, and unique glyph count at `+0x20`. The Thai fix validates and scans the CP874 byte slots `0x00..0xFF`, because the renderer receives those byte values widened to 16 bits.
@@ -15,6 +15,56 @@
 - The Syringe build has separate RA2 and Yuri variants. Its handshake accepts only the recorded executable size, timestamp, and CRC; the `.dll.inj` sidecars hook the verified executable entry points before the game reaches its original code. Syringe can coexist with the Bink proxy or integrated TS-DDraw build because they share the active-hook marker.
 - The earlier DDraw wrapper only exposed the generic DirectDraw function set and mixed custom/system renderer targets. It is archived under `ddraw/legacy-proxies` and is no longer built or installed.
 - The TS-DDraw build calls `ThaiFontFixInitialize` from `DirectDrawCreate`, before `SettingsLoad` and `hook_init`. DDraw, Bink, and Syringe variants all read `thaifontfix.ini` and append diagnostics to `thaifontfix.log` beside their module or game directory.
+
+## How the game executables and hook points were identified
+
+The supplied executables were analyzed as separate 32-bit PE programs with Ghidra 12.1.4 from `C:\app\reverse-tools`. The recorded hook locations came from examining the functions' disassembly/decompiler output and cross-references, then matching the corresponding machine-code prologues in each build. Function roles are inferred from data flow and call behavior; the addresses are not symbol names supplied by the game.
+
+The analysis followed the font object and parsed FNT pointers through the text path. The layout function reads the text sequence, looks up glyph metrics, combines glyph width with font spacing, and invokes the glyph renderer. The renderer maps the widened character value to a glyph record, reads the record's width/bitmap, draws the bitmap, and returns the next x position. The direct-text helper calls into the same font/render path. Matching these behaviors across the RA2 and Yuri executables is why these addresses are treated as the layout, glyph-render, and direct-text hooks.
+
+The current code recognizes a build by PE32/I386 format, preferred image base, PE timestamp, and `SizeOfImage`; it then checks all 12 expected bytes at each target before installing any detour. It does not choose hook addresses from the process filename alone. The Syringe handshake applies an additional on-disk size/timestamp/CRC check.
+
+| Analyzed executable | PE timestamp | `SizeOfImage` | Disk size / CRC checked by Syringe | Layout RVA (VA) | Glyph RVA (VA) | Direct-text RVA (VA) |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| RA2 `game.exe` | `0x3B1EBBED` | `0x743000` | `4,485,120` / `0xD33D92ED` | `0x32490` (`0x432490`) | `0x318E0` (`0x4318E0`) | `0x31CC0` (`0x431CC0`) |
+| Yuri `gamemd.exe` | `0x3BDF544E` | `0x793000` | `4,813,072` / `0x54CC0A13` | `0x34CD0` (`0x434CD0`) | `0x34120` (`0x434120`) | `0x34500` (`0x434500`) |
+
+The Syringe sizes and CRCs above are enforced in `shared/ThaiFontFix.cpp`; the loader-side hook selection uses timestamp and image size. Treat a new executable as unsupported until its PE identity, function behavior, calling conventions, and target signatures have been analyzed and added explicitly.
+
+### Hook installation and calling conventions
+
+- The glyph renderer is `thiscall` and returns with `ret 0x10`. Its shim preserves the `this` pointer, code, x/y, color, and integer return value.
+- The layout function is `stdcall` and returns with `ret 0x28`; the shim preserves the font, target, text, position, dimensions, flags, and return value.
+- The direct-text helper is `thiscall`. The hook uses an x86 `__fastcall` shim with a dummy second register argument so it can receive the original `ECX` object pointer and preserve the original stack arguments.
+- `InstallFontHooks` first checks the PE identity and these 12-byte signatures:
+  - renderer: `83 EC 30 53 55 56 57 8B 7C 24 44 8B`
+  - layout: `83 EC 30 53 55 56 8B 74 24 40 57 33`
+  - direct text: `83 EC 10 8B 54 24 14 53 55 56 66 8B`
+- Each detour replaces five bytes with a relative `E9` jump. Those five bytes are complete instructions for the renderer and layout targets. The direct-text trampoline copies seven bytes because its first instructions are a three-byte `sub esp, 0x10` and a four-byte `mov edx, [esp+0x14]`.
+- A trampoline executes the copied original instructions and jumps back after them. The installer changes page protection only while writing, flushes the instruction cache, and restores the original protection. If installing a later hook fails, earlier overwritten entry bytes are restored.
+- The layout and direct-text shims create a nested render context under a recursive critical section, call the original function through its trampoline, then restore modified metrics and unwind the context. The glyph hook only applies Thai placement when it finds the matching active context.
+
+In a runtime session, `font hooks installed` confirms the PE/signature checks passed and entry detours were installed. It does not prove a font was accepted or that Thai text reached the hooks. Open a UI that draws Thai and check `thaifontfix.log` for `layout hook reached`, `glyph render hook reached` or `direct text hook reached`, `FNT accepted`, `metrics applied`, and a Thai mark/Sara Am handling message.
+
+## How the bitmap font is structured and modified
+
+The game renders `game.fnt` bitmaps rather than Windows TrueType text. The supplied file uses a 28-byte `fonT` header, followed by a 65,536-entry little-endian 16-bit glyph map (`0x20000` bytes), followed by fixed-stride glyph records. Header offsets observed by the parser are: signature at `+0x00`, height at `+0x0C`, glyph count at `+0x14`, and record stride at `+0x18`. In the supplied font, height is 16, stride is 49 bytes, and the file contains 29,674 records. Each record begins with its width byte and then 16 rows of three bitmap bytes (MSB-first pixels). The Thai CP874 bytes `0xA1`–`0xFB` map to records; the font does not directly map Unicode U+0E00–U+0E7F.
+
+For a bitmap-font change, preserve the `fonT` structure and CP874 byte-to-record map, edit the intended record bitmap and width, then render representative CP874 strings with `render_fnt_test.py`. Map entries are 16-bit little-endian and one-based (zero means unmapped). The renderer uses the width byte as the glyph advance input, with font spacing added by layout. Thai marks that must overlay a base need zero advance and correct bitmap artwork/placement. Sara Am (`0xD3`) is normally a spacing glyph and is split by the runtime fix only when its bitmap passes the compact-dot/right-stroke checks.
+
+The repository currently has a preview script, not a general-purpose FNT editor or TrueType-to-FNT converter. `render_fnt_test.py` reads `game.fnt` from the repository root and currently has no input-font option. For a new font asset, preserve an untouched copy, implement/use an editor or converter that writes the documented format, and extend the preview tool to accept the candidate path before treating its output as evidence.
+
+The runtime fix does **not** edit `game.exe`, the on-disk `game.fnt`, or the game's original parsed font records. It validates the live font object and glyph map, makes a private copy of parsed data and bitmap records, and points the font object at that private copy. During a layout call, it temporarily sets combining-mark widths to zero, moves the original spacing into spacing glyph advances when there is enough bitmap padding, and sets font spacing to zero; it restores all widths and spacing after the call. Mark drawing and the Sara Am split operate on that private copy and restore temporary bitmap changes after drawing.
+
+If live bitmap records cannot be safely copied, `game.fnt` beside the DLL may provide fallback records. The fallback is deliberately strict: its signature, height, stride, usable file length, and all 256 low-byte glyph-map entries must match the live font; every mapped byte must point within the records being copied. It copies the records present in both files and zero-fills the remainder of the private runtime allocation. It is not a general-purpose way to replace a font with a different map or dimensions. The observed runtime table had 34,113 records while the supplied file had 29,674; the fallback succeeded because the CP874 entries used by the game matched and fell within the copied records.
+
+The preview harness in `render_fnt_test.py` reads actual `game.fnt` records and models the Thai layout adjustments, including Sara Am. It is an offline bitmap/layout preview, not the game's actual renderer. Runtime correctness still requires testing in the supported executable and checking diagnostics/screenshots.
+
+## TrueType rendering investigation status
+
+The bitmap path is the implemented and tested behavior. A Windows TrueType path remains exploratory. Since the game passes legacy CP874 bytes and its glyph hook sees one character at a time, a TrueType option must decode a complete text run to Unicode and shape Thai before rendering individual glyphs. The recommended first experiment is an offline Uniscribe shaping plus GDI-to-DIB renderer, compared with the FNT preview. DirectWrite is not a suitable required dependency while Windows XP remains supported.
+
+Before adding a runtime replacement, determine the UI surface's pixel format/palette, transparent-pixel rule, foreground-color handling, clipping, scaling, and x-advance contract. A runtime implementation would need the full string at the layout/direct-text hook and cluster positions available to rendering; shaping each byte independently at the glyph hook will not correctly place Thai marks. Also compare this approach with offline TrueType-to-FNT generation, which could preserve the game's bitmap renderer if the generated font retains the required FNT dimensions and byte map. The current investigation checklist is in [`handover.md`](handover.md).
 
 ## Sara Am and tone-mark stacking
 

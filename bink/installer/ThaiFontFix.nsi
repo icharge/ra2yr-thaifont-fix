@@ -560,8 +560,6 @@ process_loop:
   StrCmp $4 0 process_found
   System::Call 'kernel32::lstrcmpiW(w "$3", w "gamemd.exe") i .r4'
   StrCmp $4 0 process_found
-  System::Call 'kernel32::lstrcmpiW(w "$3", w "gamemdpatch.exe") i .r4'
-  StrCmp $4 0 process_found
   System::Call 'kernel32::lstrcmpiW(w "$3", w "ra2md.exe") i .r4'
   StrCmp $4 0 process_found
   System::Call 'kernel32::lstrcmpiW(w "$3", w "syringe.exe") i .r4'

@@ -1,6 +1,6 @@
 # Syringe integration
 
-This integration packages the shared ThaiFontFix hooks as Ares Syringe extensions. It supports the supplied Red Alert 2 1.006 `game.exe`, Yuri's Revenge `GameMD.exe`/`gamemd.exe`, and the supplied `gamemdpatch.exe` build. The handshake checks file size, PE timestamp, and CRC before allowing an extension to install its entry-point hook.
+This integration packages the shared ThaiFontFix hooks as Ares Syringe extensions. It supports the supplied Red Alert 2 1.006 `game.exe` and Yuri's Revenge `gamemd.exe`. The handshake checks file size, PE timestamp, and CRC before allowing an extension to install its entry-point hook.
 
 Both variants use a `.dll.inj` sidecar and a five-byte entry-point hook. The Syringe entry hook runs the same runtime font fix as the DirectDraw and Bink builds. A shared `ThaiFontFixIsActive` export lets integrations skip a duplicate installation only if another loaded module actually reports active hooks; the loader checks the marker export in addition to the DLL name.
 

@@ -30,7 +30,7 @@ function Test-IsIntegratedThaiFontFix([string]$Path) {
         $versionInfo.FileVersion -eq $integratedFileVersion
 }
 
-$gameProcesses = @(Get-Process -Name @('RA2MD', 'GameMD', 'gamemdpatch', 'game') -ErrorAction SilentlyContinue)
+$gameProcesses = @(Get-Process -Name @('RA2MD', 'GameMD', 'gamemd', 'game') -ErrorAction SilentlyContinue)
 if ($gameProcesses.Count -gt 0) {
     $names = ($gameProcesses | Select-Object -ExpandProperty ProcessName -Unique) -join ', '
     throw "Close the game before changing its renderer DLL. Still running: $names"

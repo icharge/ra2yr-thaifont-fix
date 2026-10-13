@@ -10,7 +10,7 @@ The font hooks are called by TS-DDraw's `DirectDrawCreate` after the game execut
 
 1. After cloning this project, initialize the upstream source with `git submodule update --init ddraw/ts-ddraw-upstream` (or clone this repository with `--recurse-submodules`). The parent repository pins the upstream commit.
 2. Run `./ddraw/build.ps1` from the project root. It applies `ddraw/patches/ts-ddraw-integration.patch` if needed and builds a 32-bit `ddraw/ddraw-integrated.dll` with the shared `ThaiFontFix.cpp` implementation.
-3. Close RA2/Yuri's Revenge, including `RA2MD.exe`, `GameMD.exe`, `gamemdpatch.exe`, and `game.exe`.
+3. Close RA2/Yuri's Revenge, including `RA2MD.exe`, `gamemd.exe`, and `game.exe`.
 4. Run `./ddraw/install-integrated-ddraw.ps1`. By default, it installs into the parent game folder (the current repository layout); use `-GameDirectory <path>` for another game folder. It keeps the original renderer as `ddraw-custom.dll`. The Bink proxy can remain installed alongside it; the integrations share hook detection and the common INI.
 5. Launch the game normally. TS-DDraw continues to read `ddraw.ini`.
 
@@ -35,7 +35,7 @@ The log reports whether the hooks installed and then, on first use, whether the 
 
 ## Supported builds and font data
 
-The hook validates the executable PE timestamp, image size, renderer/layout signatures, font layout, and Thai mark glyph mappings before modifying process memory. It supports the supplied `game.exe`, `GameMD.exe`, and `gamemdpatch.exe` builds. Other executable builds keep rendering normally, but the Thai fix stays inactive until their addresses and signatures are analyzed.
+The hook validates the executable PE timestamp, image size, renderer/layout signatures, font layout, and Thai mark glyph mappings before modifying process memory. It supports the supplied `game.exe` and `gamemd.exe` builds. Other executable builds keep rendering normally, but the Thai fix stays inactive until their addresses and signatures are analyzed.
 
 The fix handles combining slots `D1`, `D4–D7`, `D8–DA`, and `E7–EE` in the supplied FNT font. It relies on the font containing glyphs in the expected CP874 slots; it does not add missing glyphs or convert Unicode text to CP874.
 

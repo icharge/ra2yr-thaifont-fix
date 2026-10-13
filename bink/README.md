@@ -51,6 +51,6 @@ Use `-GameDirectory <path>` when the game is installed somewhere else. The proxy
 
 ## Loader behavior and limits
 
-The supported `game.exe`, `GameMD.exe`, and `gamemdpatch.exe` import `BINKW32.DLL`. The CnCNet launcher only hands off to those engines; the Bink proxy is loaded by the engine process. This is a candidate path verified from the supplied game's PE import/export tables, but its actual load and hook behavior must still be confirmed in a game run by checking `thaifontfix.log` for the proxy module path and hook messages.
+The supported `game.exe` and `gamemd.exe` import `BINKW32.DLL`. The CnCNet launcher only hands off to those engines; the Bink proxy is loaded by the engine process. This is a candidate path verified from the supplied game's PE import/export tables, but its actual load and hook behavior must still be confirmed in a game run by checking `thaifontfix.log` for the proxy module path and hook messages.
 
 The proxy preserves each original export name and ordinal. Small x86 stubs resolve the matching export from `binkw32.bin` by its full game-folder path and tail-jump to it; this avoids relying on Windows to locate a renamed DLL from a PE forwarder string. The proxy does not emulate or modify Bink video/audio behavior. Like the other external-loader variants, the shared font-hook code still validates the game executable and live font state before changing rendering. Existing installs using the earlier `.TLB` or `ThaiFontFixBinkReal.dll` backup name are restored and migrated by the installer.

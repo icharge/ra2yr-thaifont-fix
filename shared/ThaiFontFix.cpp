@@ -931,10 +931,6 @@ static BOOL IsKnownImage(BYTE* image, DWORD* renderRva, DWORD* layoutRva, DWORD*
         *renderRva = 0x34120;
         *layoutRva = 0x34cd0;
         *textRva = 0x34500;
-    } else if (timestamp == 0x55fcd961 && imageSize == 0x798000) {
-        *renderRva = 0x34120;
-        *layoutRva = 0x34cd0;
-        *textRva = 0x34500;
     } else {
         return FALSE;
     }
@@ -1514,8 +1510,7 @@ extern "C" HRESULT __cdecl SyringeHandshake(SyringeHandshakeInfo* info) {
         : "ThaiFontFix Syringe hook: target is not the supported Red Alert 2 game.exe");
 #elif defined(THAI_FONT_SYRINGE_YR)
     const BOOL supported =
-        (info->exeFilesize == 4813072u && info->exeTimestamp == 0x3bdf544eu && info->exeCRC == 0x54cc0a13u) ||
-        (info->exeFilesize == 4818320u && info->exeTimestamp == 0x55fcd961u && info->exeCRC == 0xf9d60aaeu);
+        info->exeFilesize == 4813072u && info->exeTimestamp == 0x3bdf544eu && info->exeCRC == 0x54cc0a13u;
     SetSyringeHandshakeMessage(info, supported
         ? "ThaiFontFix Syringe hook: Yuri's Revenge game executable supported"
         : "ThaiFontFix Syringe hook: target is not a supported Yuri's Revenge executable");

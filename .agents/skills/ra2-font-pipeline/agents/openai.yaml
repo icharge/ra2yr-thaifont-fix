@@ -1,0 +1,3 @@
+interface:
+  display_name: "RA2 Font Pipeline"
+  short_description: "Reverse engineer RA2 Thai text rendering"

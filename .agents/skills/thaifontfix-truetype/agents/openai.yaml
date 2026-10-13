@@ -1,0 +1,3 @@
+interface:
+  display_name: "ThaiFontFix TrueType"
+  short_description: "Shape and render Thai TrueType text in RA2"
