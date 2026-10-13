@@ -42,6 +42,8 @@ BrandingText "https://thaira2.com"
 !define FONT_ADDED_MARKER "game.fnt.thaifnt-added"
 !define FONT_STAGE "game.fnt.thaifnt-staging"
 !define FONT_REMOVE_STAGE "game.fnt.thaifnt-removing"
+!define FONT_PACK_README_NAME "FontsForRedAlert2-README.md"
+!define FONT_PACK_LICENSE_NAME "FontsForRedAlert2-LICENSE.md"
 
 ; Uninstall is the removal path. Do not add WriteUninstaller or uninstaller pages.
 
@@ -64,6 +66,7 @@ Var InstalledProxyDisplay
 Var UpdateCleanupWarning
 Var ActionOverride
 Var UpdateConfirmed
+Var AttributionWarning
 Var ActionDialog
 Var InstallRadio
 Var RestoreRadio
@@ -83,8 +86,22 @@ Var LastSystemError
 Var ConfigExists
 Var RestoreRecovery
 Var SelectedFontPath
+Var SelectedFontName
+Var FontChoice
+Var FontRadio0
+Var FontRadio1
+Var FontRadio2
+Var FontRadio3
+Var FontRadio4
+Var FontRadio5
+Var FontRadio6
+Var FontAuthorLabel
+Var FontPreviewControl
+Var FontPreviewHandle
 Var FontOriginalMissing
 Var FontInstalled
+Var FontUpdateHadBackup
+Var FontUpdateHadMarker
 
 !define MUI_WELCOMEPAGE_TITLE_3LINES
 !define MUI_WELCOMEPAGE_TITLE "Welcome to ThaiFontFix for RA2YR$\r$\nBy THAI RA2"
@@ -94,14 +111,28 @@ Var FontInstalled
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryPageLeave
 !insertmacro MUI_PAGE_DIRECTORY
 Page custom ActionPageCreate ActionPageLeave
+Page custom FontPageCreate FontPageLeave
 !insertmacro MUI_PAGE_INSTFILES
+Page custom CreditsPageCreate CreditsPageLeave
 !insertmacro MUI_LANGUAGE "English"
 
 Function .onInit
   StrCpy $Action "install"
+  StrCpy $FontChoice "6"
   StrCpy $ElevationAttempted "0"
   StrCpy $ActionOverride ""
   StrCpy $UpdateConfirmed "0"
+  StrCpy $AttributionWarning ""
+  StrCpy $FontPreviewHandle "0"
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=font-preview-default.bmp "${DEFAULT_FONT_PREVIEW_FILE}"
+  File /oname=font-preview-boiling-point.bmp "${BOILING_POINT_PREVIEW_FILE}"
+  File /oname=font-preview-final-war.bmp "${FINAL_WAR_PREVIEW_FILE}"
+  File /oname=font-preview-phobos-improved.bmp "${PHOBOS_IMPROVED_PREVIEW_FILE}"
+  File /oname=font-preview-reborn.bmp "${REBORN_PREVIEW_FILE}"
+  File /oname=font-preview-rise-of-the-east.bmp "${RISE_OF_THE_EAST_PREVIEW_FILE}"
+  File /oname=font-preview-westwood-improved.bmp "${WESTWOOD_IMPROVED_PREVIEW_FILE}"
   ${GetParameters} $0
   ${GetOptions} "$0" "/THAIFNT_ELEVATED=" $1
   IfErrors init_find_game_dir
@@ -119,6 +150,10 @@ init_action_restore:
   StrCpy $Action "restore"
   StrCpy $ActionOverride "restore"
 init_elevated_confirmation:
+  ${GetOptions} "$0" "/THAIFNT_FONT_CHOICE=" $1
+  IfErrors init_elevated_update_confirmation
+  StrCpy $FontChoice $1
+init_elevated_update_confirmation:
   ${GetOptions} "$0" "/THAIFNT_UPDATE_CONFIRMED=" $1
   IfErrors init_done
   StrCmp $1 "1" 0 init_done
@@ -318,7 +353,7 @@ Function ActionPageLeave
   ${If} $InstallState == "installed"
     ${If} $Action == "install"
       StrCmp $UpdateConfirmed "1" action_update_confirmation_done
-      MessageBox MB_ICONEXCLAMATION|MB_YESNO|MB_DEFBUTTON2 "This will overwrite the installed ThaiFontFix proxy (version $InstalledProxyDisplay) with version ${PROXY_VERSION}. The original Bink backup, including binkw32.bin if present, will be kept. Continue?" IDNO action_update_declined
+      MessageBox MB_ICONEXCLAMATION|MB_YESNO|MB_DEFBUTTON2 "This will overwrite the installed ThaiFontFix proxy (version $InstalledProxyDisplay) with version ${PROXY_VERSION} and install the font selected on the next page. The original Bink backup will be kept. Continue?" IDNO action_update_declined
       StrCpy $UpdateConfirmed "1"
 action_update_confirmation_done:
     ${EndIf}
@@ -326,6 +361,295 @@ action_update_confirmation_done:
   Return
 action_update_declined:
   Abort
+FunctionEnd
+
+Function FontPageCreate
+  StrCmp $Action "install" font_page_show font_page_skip
+font_page_show:
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "Choose a game font" "Select a font and preview its Thai glyphs."
+  ${NSD_CreateFirstRadioButton} 6u 8u 108u 16u "Westwood Improved"
+  Pop $FontRadio6
+  ${NSD_OnClick} $FontRadio6 FontRadioClicked
+  ${NSD_CreateAdditionalRadioButton} 6u 25u 108u 16u "Tahoma"
+  Pop $FontRadio0
+  ${NSD_OnClick} $FontRadio0 FontRadioClicked
+  ${NSD_CreateAdditionalRadioButton} 6u 42u 108u 16u "Boiling Point"
+  Pop $FontRadio1
+  ${NSD_OnClick} $FontRadio1 FontRadioClicked
+  ${NSD_CreateAdditionalRadioButton} 6u 59u 108u 16u "Final War"
+  Pop $FontRadio2
+  ${NSD_OnClick} $FontRadio2 FontRadioClicked
+  ${NSD_CreateAdditionalRadioButton} 6u 76u 108u 16u "Phobos Improved"
+  Pop $FontRadio3
+  ${NSD_OnClick} $FontRadio3 FontRadioClicked
+  ${NSD_CreateAdditionalRadioButton} 6u 93u 108u 16u "Reborn"
+  Pop $FontRadio4
+  ${NSD_OnClick} $FontRadio4 FontRadioClicked
+  ${NSD_CreateAdditionalRadioButton} 6u 110u 108u 16u "Rise of the East"
+  Pop $FontRadio5
+  ${NSD_OnClick} $FontRadio5 FontRadioClicked
+
+  ${If} $FontChoice == "0"
+    ${NSD_SetState} $FontRadio0 ${BST_CHECKED}
+  ${ElseIf} $FontChoice == "1"
+    ${NSD_SetState} $FontRadio1 ${BST_CHECKED}
+  ${ElseIf} $FontChoice == "2"
+    ${NSD_SetState} $FontRadio2 ${BST_CHECKED}
+  ${ElseIf} $FontChoice == "3"
+    ${NSD_SetState} $FontRadio3 ${BST_CHECKED}
+  ${ElseIf} $FontChoice == "4"
+    ${NSD_SetState} $FontRadio4 ${BST_CHECKED}
+  ${ElseIf} $FontChoice == "5"
+    ${NSD_SetState} $FontRadio5 ${BST_CHECKED}
+  ${ElseIf} $FontChoice == "6"
+    ${NSD_SetState} $FontRadio6 ${BST_CHECKED}
+  ${Else}
+    StrCpy $FontChoice "6"
+    ${NSD_SetState} $FontRadio6 ${BST_CHECKED}
+  ${EndIf}
+
+  ${NSD_CreateLabel} 122u 8u 180u 16u ""
+  Pop $FontAuthorLabel
+  ${NSD_CreateLabel} 122u 26u 180u 16u "Thai glyphs Tahoma by Thai RA2 (iCharge)"
+  Pop $0
+  ${NSD_CreateLabel} 122u 46u 180u 16u "Rendered in the game bitmap font:"
+  Pop $0
+  ${NSD_CreateBitmap} 122u 64u 180u 65u ""
+  Pop $FontPreviewControl
+  Call UpdateFontDetails
+  nsDialogs::Show
+  Return
+font_page_skip:
+  Abort
+FunctionEnd
+
+Function FontRadioClicked
+  Pop $0
+  Call ReadFontRadioSelection
+  Call UpdateFontDetails
+FunctionEnd
+
+Function ReadFontRadioSelection
+  ${NSD_GetState} $FontRadio6 $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $FontChoice "6"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $FontRadio5 $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $FontChoice "5"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $FontRadio4 $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $FontChoice "4"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $FontRadio3 $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $FontChoice "3"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $FontRadio2 $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $FontChoice "2"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $FontRadio1 $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $FontChoice "1"
+    Return
+  ${EndIf}
+  StrCpy $FontChoice "0"
+FunctionEnd
+
+Function UpdateFontDetails
+  StrCmp $FontChoice "1" font_details_boiling_point
+  StrCmp $FontChoice "2" font_details_final_war
+  StrCmp $FontChoice "3" font_details_phobos_improved
+  StrCmp $FontChoice "4" font_details_reborn
+  StrCmp $FontChoice "5" font_details_rise_of_the_east
+  StrCmp $FontChoice "6" font_details_westwood_improved
+  StrCpy $SelectedFontName "Tahoma"
+  StrCpy $0 "${DEFAULT_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-default.bmp"
+  Goto font_details_show
+font_details_boiling_point:
+  StrCpy $SelectedFontName "Boiling Point"
+  StrCpy $0 "${BOILING_POINT_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-boiling-point.bmp"
+  Goto font_details_show
+font_details_final_war:
+  StrCpy $SelectedFontName "Final War"
+  StrCpy $0 "${FINAL_WAR_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-final-war.bmp"
+  Goto font_details_show
+font_details_phobos_improved:
+  StrCpy $SelectedFontName "Phobos Improved"
+  StrCpy $0 "${PHOBOS_IMPROVED_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-phobos-improved.bmp"
+  Goto font_details_show
+font_details_reborn:
+  StrCpy $SelectedFontName "Reborn"
+  StrCpy $0 "${REBORN_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-reborn.bmp"
+  Goto font_details_show
+font_details_rise_of_the_east:
+  StrCpy $SelectedFontName "Rise of the East"
+  StrCpy $0 "${RISE_OF_THE_EAST_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-rise-of-the-east.bmp"
+  Goto font_details_show
+font_details_westwood_improved:
+  StrCpy $SelectedFontName "Westwood Improved"
+  StrCpy $0 "${WESTWOOD_IMPROVED_FONT_AUTHOR}"
+  StrCpy $1 "$PLUGINSDIR\font-preview-westwood-improved.bmp"
+font_details_show:
+  ${NSD_SetText} $FontAuthorLabel "Author: $0"
+  ${NSD_FreeImage} $FontPreviewHandle
+  ${NSD_SetImage} $FontPreviewControl "$1" $FontPreviewHandle
+FunctionEnd
+
+Function FontPageLeave
+  Call ReadFontRadioSelection
+  StrCpy $0 $FontChoice
+  StrCmp $0 "1" font_choose_boiling_point
+  StrCmp $0 "2" font_choose_final_war
+  StrCmp $0 "3" font_choose_phobos_improved
+  StrCmp $0 "4" font_choose_reborn
+  StrCmp $0 "5" font_choose_rise_of_the_east
+  StrCmp $0 "6" font_choose_westwood_improved
+  Goto font_choose_current
+font_choose_current:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-current.fnt"
+  StrCpy $SelectedFontName "Tahoma"
+  Return
+font_choose_boiling_point:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-boiling-point.fnt"
+  StrCpy $SelectedFontName "Boiling Point"
+  Return
+font_choose_final_war:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-final-war.fnt"
+  StrCpy $SelectedFontName "Final War"
+  Return
+font_choose_phobos_improved:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-phobos-improved.fnt"
+  StrCpy $SelectedFontName "Phobos Improved"
+  Return
+font_choose_reborn:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-reborn.fnt"
+  StrCpy $SelectedFontName "Reborn"
+  Return
+font_choose_rise_of_the_east:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-rise-of-the-east.fnt"
+  StrCpy $SelectedFontName "Rise of the East"
+  Return
+font_choose_westwood_improved:
+  StrCpy $SelectedFontPath "$PLUGINSDIR\font-westwood-improved.fnt"
+  StrCpy $SelectedFontName "Westwood Improved"
+FunctionEnd
+
+Function CreditsPageCreate
+  StrCmp $Action "install" credits_page_show credits_page_skip
+credits_page_show:
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "Installation complete" "Credits and source links"
+  SendMessage $mui.Button.Next ${WM_SETTEXT} 0 "STR:Finish"
+
+  ${NSD_CreateLabel} 6u 0u 285u 16u "Thank you for installing ThaiFontFix for Red Alert 2."
+  Pop $0
+  ${NSD_CreateLabel} 6u 18u 285u 16u "Thai glyphs: THAI RA2 (iCharge); font edits: mah_boi."
+  Pop $0
+  ${NSD_CreateLabel} 6u 36u 285u 16u "Original font authors and sources:"
+  Pop $0
+
+  ${NSD_CreateLabel} 6u 52u 220u 12u "Tahoma 8px - WavePY"
+  Pop $0
+  ${NSD_CreateLink} 232u 52u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://fontstruct.com/fontstructions/show/735108/fs_tahoma_8px"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLabel} 6u 64u 220u 12u "Westwood Improved - Westwood"
+  Pop $0
+  ${NSD_CreateLink} 232u 64u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://github.com/rust-alert/FontsForRedAlert2"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLabel} 6u 76u 220u 12u "Boiling Point - wiktorderelf"
+  Pop $0
+  ${NSD_CreateLink} 232u 76u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://discord.gg/k4SVuMm"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLabel} 6u 88u 220u 12u "Final War - SMxReaver"
+  Pop $0
+  ${NSD_CreateLink} 232u 88u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://www.moddb.com/mods/cncfinalwar"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLabel} 6u 100u 220u 12u "Phobos Improved - Kerbiter, wiktorderelf, Uranusian"
+  Pop $0
+  ${NSD_CreateLink} 232u 100u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://github.com/Phobos-developers/PhobosSupplementaries/tree/develop/ImprovedFont"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLabel} 6u 112u 220u 12u "Reborn - Belonit"
+  Pop $0
+  ${NSD_CreateLink} 232u 112u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://www.moddb.com/mods/cc-red-alert-2-reborn1"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLabel} 6u 124u 220u 12u "Rise of the East - ayylmao"
+  Pop $0
+  ${NSD_CreateLink} 232u 124u 56u 12u "Source"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://www.moddb.com/mods/riseoftheeast"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  ${NSD_CreateLink} 6u 142u 64u 12u "THAI RA2 site"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://thaira2.com"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+  ${NSD_CreateLink} 84u 142u 78u 12u "Font collection"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://github.com/rust-alert/FontsForRedAlert2"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+  ${NSD_CreateLink} 176u 142u 100u 12u "CC BY-NC 4.0 license"
+  Pop $0
+  nsDialogs::SetUserData $0 "https://creativecommons.org/licenses/by-nc/4.0/"
+  ${NSD_OnClick} $0 CreditsLinkClicked
+
+  nsDialogs::Show
+  Return
+credits_page_skip:
+  Abort
+FunctionEnd
+
+Function CreditsLinkClicked
+  Pop $0
+  nsDialogs::GetUserData $0
+  Pop $1
+  StrCmp $1 "" credits_link_done
+  ExecShell "open" "$1"
+credits_link_done:
+FunctionEnd
+
+Function CreditsPageLeave
+  Return
 FunctionEnd
 
 Function DirectoryPageLeave
@@ -362,19 +686,19 @@ detect_proxy_present:
   StrCpy $InstalledProxyDisplay $InstalledProxyVersion $0
 detect_proxy_version_ready:
   StrCpy $InstallState "installed"
-  StrCpy $Action "restore"
-  StrCmp $ActionOverride "install" 0 detect_proxy_show_version
   StrCpy $Action "install"
+  StrCmp $ActionOverride "restore" 0 detect_proxy_show_version
+  StrCpy $Action "restore"
 detect_proxy_show_version:
-  StrCpy $InstallStatusText "Installed: $InstalledProxyDisplay  |  Setup: ${PROXY_VERSION}$\r$\nChoose Install to overwrite the proxy."
+  StrCpy $InstallStatusText "Installed: $InstalledProxyDisplay  |  Setup: ${PROXY_VERSION}$\r$\nChoose Install to change the selected font or update ThaiFontFix, or choose Uninstall to restore the originals."
   Return
 detect_proxy_version_unknown:
   StrCpy $InstallState "installed"
-  StrCpy $Action "restore"
-  StrCmp $ActionOverride "install" 0 detect_proxy_show_unknown_version
   StrCpy $Action "install"
+  StrCmp $ActionOverride "restore" 0 detect_proxy_show_unknown_version
+  StrCpy $Action "restore"
 detect_proxy_show_unknown_version:
-  StrCpy $InstallStatusText "Installed: Unknown  |  Setup: ${PROXY_VERSION}$\r$\nChoose Install to overwrite the proxy."
+  StrCpy $InstallStatusText "Installed: Unknown  |  Setup: ${PROXY_VERSION}$\r$\nChoose Install to change the selected font or update ThaiFontFix, or choose Uninstall to restore the originals."
   Return
 
 detect_proxy_backup_problem:
@@ -475,7 +799,7 @@ FunctionEnd
 
 Function ElevateInstaller
   StrCmp $ElevationAttempted "1" elevate_return
-  StrCpy $0 "/THAIFNT_ELEVATED=1 /THAIFNT_ACTION=$Action /D=$INSTDIR"
+  StrCpy $0 "/THAIFNT_ELEVATED=1 /THAIFNT_ACTION=$Action /THAIFNT_FONT_CHOICE=$FontChoice /D=$INSTDIR"
   StrCmp $UpdateConfirmed "1" 0 elevate_launch
   StrCpy $0 "$0 /THAIFNT_UPDATE_CONFIRMED=1"
 elevate_launch:
@@ -701,9 +1025,15 @@ Section "ThaiFontFix"
   File /oname=thaifontfix.ini "${CONFIG_FILE}"
   File /oname=expected-exports.txt "${EXPORTS_FILE}"
   File /oname=ThaiFontFix_readme.txt "${README_FILE}"
-  File /oname=font-default.fnt "${DEFAULT_FONT_FILE}"
-  ; A future font-selection page can point this at a different packaged font.
-  StrCpy $SelectedFontPath "$PLUGINSDIR\font-default.fnt"
+  File /oname=font-current.fnt "${DEFAULT_FONT_FILE}"
+  File /oname=font-boiling-point.fnt "${BOILING_POINT_FONT_FILE}"
+  File /oname=font-final-war.fnt "${FINAL_WAR_FONT_FILE}"
+  File /oname=font-phobos-improved.fnt "${PHOBOS_IMPROVED_FONT_FILE}"
+  File /oname=font-reborn.fnt "${REBORN_FONT_FILE}"
+  File /oname=font-rise-of-the-east.fnt "${RISE_OF_THE_EAST_FONT_FILE}"
+  File /oname=font-westwood-improved.fnt "${WESTWOOD_IMPROVED_FONT_FILE}"
+  File /oname=${FONT_PACK_README_NAME} "${FONT_PACK_README_FILE}"
+  File /oname=${FONT_PACK_LICENSE_NAME} "${FONT_LICENSE_FILE}"
   StrCpy $FontOriginalMissing "0"
   StrCpy $FontInstalled "0"
   StrCpy $FailureMessage ""
@@ -718,24 +1048,36 @@ invalid_game_dir:
 
 do_install:
   Call InstallProxy
+  Call CopyFontAttributionDocs
+  StrCmp $R9 "1" install_attribution_ready
+  StrCpy $AttributionWarning "The font license and credits could not be copied to the game folder. They are still included in this setup."
+install_attribution_ready:
   StrCmp $InstallState "installed" install_updated_successfully
   IfFileExists "$INSTDIR\${README_NAME}" install_readme_complete
   ClearErrors
   CopyFiles /SILENT "$PLUGINSDIR\${README_NAME}" "$INSTDIR"
   IfErrors install_readme_failed
 install_readme_complete:
-  MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix was installed successfully."
-  Goto section_complete
+  Goto install_success_message
 
 install_updated_successfully:
   StrCmp $UpdateCleanupWarning "" install_update_message
   MessageBox MB_ICONEXCLAMATION|MB_OK "$UpdateCleanupWarning"
 install_update_message:
-  MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix was updated successfully."
+  StrCmp $AttributionWarning "" install_update_success_message
+  MessageBox MB_ICONEXCLAMATION|MB_OK "$AttributionWarning"
+install_update_success_message:
+  MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix was updated successfully with $SelectedFontName."
   Goto section_complete
 
 install_readme_failed:
   MessageBox MB_ICONEXCLAMATION|MB_OK "ThaiFontFix was installed, but its readme could not be copied to the game folder."
+  Goto install_success_message
+install_success_message:
+  StrCmp $AttributionWarning "" install_success_popup
+  MessageBox MB_ICONEXCLAMATION|MB_OK "$AttributionWarning"
+install_success_popup:
+  MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix was installed successfully with $SelectedFontName."
   Goto section_complete
 
 do_restore:
@@ -747,6 +1089,14 @@ Function InstallProxy
   StrCmp $InstallState "installed" install_update_existing install_new_proxy
 install_update_existing:
   Call UpdateInstalledProxy
+  Call UpdateSelectedFont
+  StrCmp $R9 "1" update_font_done
+  StrCmp $UpdateCleanupWarning "" update_font_first_warning
+  StrCpy $UpdateCleanupWarning "$UpdateCleanupWarning$\r$\nThe game font was not changed: $FailureMessage"
+  Goto update_font_done
+update_font_first_warning:
+  StrCpy $UpdateCleanupWarning "The proxy was updated, but the game font was not changed: $FailureMessage"
+update_font_done:
   Return
 install_new_proxy:
   Push "$INSTDIR\${PROXY_NAME}"
@@ -896,6 +1246,23 @@ install_failure:
   Abort
 FunctionEnd
 
+Function CopyFontAttributionDocs
+  StrCpy $R9 "1"
+  IfFileExists "$INSTDIR\${FONT_PACK_README_NAME}" font_notice_check_license
+  ClearErrors
+  CopyFiles /SILENT "$PLUGINSDIR\${FONT_PACK_README_NAME}" "$INSTDIR"
+  IfErrors font_notice_copy_failed
+font_notice_check_license:
+  IfFileExists "$INSTDIR\${FONT_PACK_LICENSE_NAME}" font_notice_done
+  ClearErrors
+  CopyFiles /SILENT "$PLUGINSDIR\${FONT_PACK_LICENSE_NAME}" "$INSTDIR"
+  IfErrors font_notice_copy_failed
+font_notice_done:
+  Return
+font_notice_copy_failed:
+  StrCpy $R9 "0"
+FunctionEnd
+
 Function UpdateInstalledProxy
   StrCpy $UpdateCleanupWarning ""
   StrCpy $FailureMessage ""
@@ -935,6 +1302,8 @@ update_copy_proxy:
   CopyFiles /SILENT "$PLUGINSDIR\binkw32.dll" "$INSTDIR\${PROXY_STAGE}"
   IfErrors update_stage_write_failed
 
+  ; Updates only replace the active proxy. Open the preserved original for
+  ; read-only export validation; never rename, copy over, or delete the backup.
   Push "$BackupPath"
   Call OpenImage
   Pop $OriginalHandle
@@ -1200,7 +1569,7 @@ Function InstallSelectedFont
   StrCpy $FontOriginalMissing "0"
   StrCpy $FontInstalled "0"
   IfFileExists "$SelectedFontPath" font_source_ready
-  StrCpy $FailureMessage "The packaged default game font is missing. No game files were changed."
+  StrCpy $FailureMessage "The selected packaged game font is missing. No game files were changed."
   Return
 font_source_ready:
   IfFileExists "$INSTDIR\${FONT_BACKUP}" font_backup_conflict
@@ -1251,7 +1620,7 @@ font_stage_conflict:
   StrCpy $FailureMessage "A temporary font file already exists. Choose Uninstall to recover the previous setup before installing again."
   Return
 font_stage_copy_failed:
-  StrCpy $FailureMessage "The installer could not stage the default game font. Check folder permissions and free space."
+  StrCpy $FailureMessage "The installer could not stage the selected game font. Check folder permissions and free space."
   Return
 font_backup_rename_failed:
   Delete "$INSTDIR\${FONT_STAGE}"
@@ -1261,7 +1630,7 @@ font_restore_backup_after_failed_install:
   ClearErrors
   Rename "$INSTDIR\${FONT_BACKUP}" "$INSTDIR\${FONT_NAME}"
   Delete "$INSTDIR\${FONT_STAGE}"
-  StrCpy $FailureMessage "Could not install the default game font. The existing font was restored."
+  StrCpy $FailureMessage "Could not install the selected game font. The existing font was restored."
   Return
 font_marker_create_failed:
   Delete "$INSTDIR\${FONT_STAGE}"
@@ -1270,7 +1639,145 @@ font_marker_create_failed:
 font_remove_marker_after_failed_install:
   Delete "$INSTDIR\${FONT_ADDED_MARKER}"
   Delete "$INSTDIR\${FONT_STAGE}"
-  StrCpy $FailureMessage "Could not install the default game font. No game font was left installed."
+  StrCpy $FailureMessage "Could not install the selected game font. No game font was left installed."
+FunctionEnd
+
+Function UpdateSelectedFont
+  StrCpy $R9 "0"
+  StrCpy $FontUpdateHadBackup "0"
+  StrCpy $FontUpdateHadMarker "0"
+  IfFileExists "$SelectedFontPath" update_font_source_ready
+  StrCpy $FailureMessage "The selected packaged game font is missing. The existing game font was left unchanged."
+  Return
+
+update_font_source_ready:
+  IfFileExists "$INSTDIR\${FONT_STAGE}" update_font_stage_conflict
+  IfFileExists "$INSTDIR\${FONT_REMOVE_STAGE}" update_font_stage_conflict
+  IfFileExists "$INSTDIR\${FONT_BACKUP}" update_font_backup_present update_font_check_marker
+update_font_backup_present:
+  StrCpy $FontUpdateHadBackup "1"
+  IfFileExists "$INSTDIR\${FONT_ADDED_MARKER}" update_font_ownership_conflict
+  Goto update_font_check_current
+update_font_check_marker:
+  IfFileExists "$INSTDIR\${FONT_ADDED_MARKER}" update_font_marker_present update_font_check_current
+update_font_marker_present:
+  StrCpy $FontUpdateHadMarker "1"
+
+update_font_check_current:
+  IfFileExists "$INSTDIR\${FONT_NAME}" update_font_current_exists update_font_current_missing
+update_font_current_exists:
+  System::Call 'kernel32::GetFileAttributesW(w "$INSTDIR\${FONT_NAME}") i .r0'
+  IntOp $0 $0 & 0x10
+  StrCmp $0 0 update_font_copy_stage update_font_is_directory
+update_font_current_missing:
+  Goto update_font_copy_stage
+
+update_font_copy_stage:
+  ClearErrors
+  CopyFiles /SILENT "$SelectedFontPath" "$INSTDIR\${FONT_STAGE}"
+  IfErrors update_font_copy_failed
+  IfFileExists "$INSTDIR\${FONT_NAME}" update_font_replace_managed update_font_install_missing
+
+update_font_replace_managed:
+  StrCmp $FontUpdateHadBackup "1" update_font_move_managed_current
+  StrCmp $FontUpdateHadMarker "1" update_font_move_managed_current
+  ; An older installation may not have font ownership metadata. Keep its
+  ; current game.fnt as the original before applying the chosen font.
+  ClearErrors
+  Rename "$INSTDIR\${FONT_NAME}" "$INSTDIR\${FONT_BACKUP}"
+  IfErrors update_font_preserve_original_failed
+  ClearErrors
+  Rename "$INSTDIR\${FONT_STAGE}" "$INSTDIR\${FONT_NAME}"
+  IfErrors update_font_restore_original_after_failed_install
+  StrCpy $R9 "1"
+  Return
+
+update_font_move_managed_current:
+  ClearErrors
+  Rename "$INSTDIR\${FONT_NAME}" "$INSTDIR\${FONT_REMOVE_STAGE}"
+  IfErrors update_font_replace_failed
+  ClearErrors
+  Rename "$INSTDIR\${FONT_STAGE}" "$INSTDIR\${FONT_NAME}"
+  IfErrors update_font_restore_managed_current
+  ClearErrors
+  Delete "$INSTDIR\${FONT_REMOVE_STAGE}"
+  IfFileExists "$INSTDIR\${FONT_REMOVE_STAGE}" update_font_restore_after_cleanup_failure
+  StrCpy $R9 "1"
+  Return
+
+update_font_restore_after_cleanup_failure:
+  ; Keep a failed cleanup from blocking Uninstall: move the chosen font back
+  ; to staging and restore the previous installed font.
+  ClearErrors
+  Rename "$INSTDIR\${FONT_NAME}" "$INSTDIR\${FONT_STAGE}"
+  IfErrors update_font_cleanup_rollback_failed
+  ClearErrors
+  Rename "$INSTDIR\${FONT_REMOVE_STAGE}" "$INSTDIR\${FONT_NAME}"
+  IfErrors update_font_cleanup_rollback_failed
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCpy $FailureMessage "Could not replace the current game font because its temporary copy could not be removed. The previous font was restored."
+  Return
+
+update_font_install_missing:
+  StrCmp $FontUpdateHadBackup "1" update_font_move_new_to_missing
+  StrCmp $FontUpdateHadMarker "1" update_font_move_new_to_missing
+  ClearErrors
+  FileOpen $0 "$INSTDIR\${FONT_ADDED_MARKER}" w
+  IfErrors update_font_marker_create_failed
+  FileClose $0
+update_font_move_new_to_missing:
+  ClearErrors
+  Rename "$INSTDIR\${FONT_STAGE}" "$INSTDIR\${FONT_NAME}"
+  IfErrors update_font_missing_install_failed
+  StrCpy $R9 "1"
+  Return
+
+update_font_stage_conflict:
+  StrCpy $FailureMessage "A temporary font file already exists. The current game font was left unchanged."
+  Return
+update_font_ownership_conflict:
+  StrCpy $FailureMessage "The game font has conflicting ThaiFontFix ownership markers. The current font was left unchanged."
+  Return
+update_font_is_directory:
+  StrCpy $FailureMessage "game.fnt is a folder. Rename it before changing the selected font."
+  Return
+update_font_copy_failed:
+  StrCpy $FailureMessage "The installer could not stage the selected game font. Check folder permissions and free space."
+  Return
+update_font_preserve_original_failed:
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCpy $FailureMessage "Could not preserve the current game font. The selected font was not installed."
+  Return
+update_font_restore_original_after_failed_install:
+  ClearErrors
+  Rename "$INSTDIR\${FONT_BACKUP}" "$INSTDIR\${FONT_NAME}"
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCpy $FailureMessage "Could not install the selected game font. The previous font was restored."
+  Return
+update_font_replace_failed:
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCpy $FailureMessage "Could not stage the currently installed game font. The selected font was not installed."
+  Return
+update_font_restore_managed_current:
+  ClearErrors
+  Rename "$INSTDIR\${FONT_REMOVE_STAGE}" "$INSTDIR\${FONT_NAME}"
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCpy $FailureMessage "Could not install the selected game font. The previous font was restored."
+  Return
+update_font_cleanup_rollback_failed:
+  StrCpy $FailureMessage "Font replacement cleanup failed. The selected font or recovery copy remains in the game folder; run Uninstall before trying again."
+  Return
+update_font_marker_create_failed:
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCpy $FailureMessage "Could not mark the new game font for safe removal. No game font was changed."
+  Return
+update_font_missing_install_failed:
+  Delete "$INSTDIR\${FONT_STAGE}"
+  StrCmp $FontUpdateHadBackup "1" update_font_missing_backup_failure
+  StrCmp $FontUpdateHadMarker "1" update_font_missing_backup_failure
+  Delete "$INSTDIR\${FONT_ADDED_MARKER}"
+update_font_missing_backup_failure:
+  StrCpy $FailureMessage "Could not install the selected game font. The original font backup was left untouched."
 FunctionEnd
 
 Function RollbackSelectedFont
@@ -1312,8 +1819,13 @@ restore_font_backup_exists:
   IfFileExists "$INSTDIR\${FONT_NAME}" restore_font_move_current
   Goto restore_font_move_original
 restore_font_check_recovery_stage:
-  IfFileExists "$INSTDIR\${FONT_NAME}" restore_font_stage_conflict
+  IfFileExists "$INSTDIR\${FONT_NAME}" restore_font_cleanup_existing_stage
   Goto restore_font_move_original
+restore_font_cleanup_existing_stage:
+  ; The original backup makes an interrupted font replacement disposable.
+  Delete "$INSTDIR\${FONT_REMOVE_STAGE}"
+  IfFileExists "$INSTDIR\${FONT_REMOVE_STAGE}" restore_font_delete_failed
+  Goto restore_font_move_current
 restore_font_move_current:
   ClearErrors
   Rename "$INSTDIR\${FONT_NAME}" "$INSTDIR\${FONT_REMOVE_STAGE}"
@@ -1342,9 +1854,6 @@ restore_font_cleanup_remove_stage:
   Delete "$INSTDIR\${FONT_REMOVE_STAGE}"
   IfFileExists "$INSTDIR\${FONT_REMOVE_STAGE}" restore_font_delete_failed
   StrCpy $R9 "1"
-  Return
-restore_font_stage_conflict:
-  StrCpy $FailureMessage "A temporary font file already exists. The original game font backup was left untouched."
   Return
 restore_font_move_failed:
   StrCpy $FailureMessage "Could not stage the installed font for restoration. Check folder permissions and try again."

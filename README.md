@@ -1,6 +1,6 @@
 # Thai bitmap-font fix for RA2 / Yuri's Revenge
 
-ThaiFontFix adjusts placement of Thai CP874 glyphs in the game's bitmap-font renderer. It supports the supplied Red Alert 2 and Yuri's Revenge executable builds and does not modify the game executable. The Bink installer includes the default `game.fnt` and restores the player's font when uninstalled.
+ThaiFontFix adjusts placement of Thai CP874 glyphs in the game's bitmap-font renderer. It supports the supplied Red Alert 2 and Yuri's Revenge executable builds and does not modify the game executable. The Bink installer offers the current font and six additional `game.fnt` choices; the Thai glyph bitmaps from the current font are merged into the additional choices when the setup is built. Setup restores the player's original font when uninstalled.
 
 ## Integrations
 
@@ -10,7 +10,7 @@ ThaiFontFix adjusts placement of Thai CP874 glyphs in the game's bitmap-font ren
 
 The experimental version.dll integration was removed because it did not load reliably in the game. Its import table alone was not enough to make it a dependable loader.
 
-The Bink, DDraw, and Syringe variants share the implementation in [shared/ThaiFontFix.cpp](shared/ThaiFontFix.cpp), use [thaifontfix.ini](thaifontfix.ini), and write diagnostics to thaifontfix.log beside the game executables. Their active-hook marker prevents duplicate installation when variants are present together. The installer's font assets live under `bink/installer/assets/fonts/`, ready for additional font choices later.
+The Bink, DDraw, and Syringe variants share the implementation in [shared/ThaiFontFix.cpp](shared/ThaiFontFix.cpp), use [thaifontfix.ini](thaifontfix.ini), and write diagnostics to thaifontfix.log beside the game executables. Their active-hook marker prevents duplicate installation when variants are present together. The installer obtains its additional font choices and their credits from the [FontsForRedAlert2 submodule](fonts/FontsForRedAlert2); Thai glyphs are merged into package copies, so the upstream font files remain unchanged. Initialize the submodule before building the setup.
 
 ## Research and preview
 

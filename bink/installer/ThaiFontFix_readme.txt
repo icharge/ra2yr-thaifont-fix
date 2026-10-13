@@ -19,6 +19,22 @@ thaifontfix.ini only if that file does not already exist. Edit the INI to
 change the font-fix options. The Bink proxy can coexist with CnCNet's
 renderer selection.
 
+FONT OPTIONS
+Setup offers the current Tahoma font and these additional choices: Boiling
+Point, Final War, Phobos Improved, Reborn, Rise of the East, and Westwood
+Improved. The font page shows each choice's author and a rendered game-style
+preview. When updating ThaiFontFix, Install applies the selected font and
+keeps the original game.fnt for Uninstall.
+
+Thai CP874 glyph bitmaps from the current Tahoma font are merged into each
+additional font when Setup is built. Their original non-Thai artwork remains
+unchanged, and the upstream font files are not modified.
+
+The additional fonts are from Fonts For Red Alert 2 by mah_boi. Font credits
+and the license are included as FontsForRedAlert2-README.md and
+FontsForRedAlert2-LICENSE.md in the game folder. The font collection is
+licensed under CC BY-NC 4.0 and is for noncommercial use only.
+
 If ThaiFontFix is already installed, Setup shows the installed proxy version
 and the version included in this setup. Choose Install to update the proxy;
 Setup asks before overwriting it and keeps the original Bink backup.

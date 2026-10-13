@@ -1,3 +1,6 @@
 [submodule "ts-ddraw-upstream"]
     path = ddraw/ts-ddraw-upstream
     url = https://github.com/CnCNet/ts-ddraw.git
+[submodule "fonts/FontsForRedAlert2"]
+	path = fonts/FontsForRedAlert2
+	url = https://github.com/rust-alert/FontsForRedAlert2.git
