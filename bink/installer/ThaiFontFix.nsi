@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 RequestExecutionLevel user
 XPStyle on
 SetCompressor /SOLID lzma
@@ -42,13 +42,20 @@ BrandingText "https://thaira2.com"
 !define FONT_ADDED_MARKER "game.fnt.thaifnt-added"
 !define FONT_STAGE "game.fnt.thaifnt-staging"
 !define FONT_REMOVE_STAGE "game.fnt.thaifnt-removing"
+!define CNCNET_FONT_NAME "cncnet.fnt"
+; Legacy names are cleaned up by newer installs/uninstalls. New versions do
+; not preserve or restore cncnet.fnt.
+!define CNCNET_FONT_BACKUP "cncnet.fnt.thaifnt-original"
+!define CNCNET_FONT_ADDED_MARKER "cncnet.fnt.thaifnt-added"
+!define CNCNET_FONT_STAGE "cncnet.fnt.thaifnt-staging"
+!define CNCNET_FONT_REMOVE_STAGE "cncnet.fnt.thaifnt-removing"
 !define FONT_PACK_README_NAME "FontsForRedAlert2-README.md"
 !define FONT_PACK_LICENSE_NAME "FontsForRedAlert2-LICENSE.md"
 
 ; Uninstall is the removal path. Do not add WriteUninstaller or uninstaller pages.
 
 Name "${PRODUCT_NAME}"
-Caption "${PRODUCT_NAME} Setup"
+Caption "ติดตั้ง ThaiFontFix สำหรับ Red Alert 2"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$PROGRAMFILES\Westwood\RA2"
 VIProductVersion "${PRODUCT_VERSION}.0"
@@ -102,11 +109,12 @@ Var FontOriginalMissing
 Var FontInstalled
 Var FontUpdateHadBackup
 Var FontUpdateHadMarker
+Var CncNetFontInstalled
 
 !define MUI_WELCOMEPAGE_TITLE_3LINES
-!define MUI_WELCOMEPAGE_TITLE "Welcome to ThaiFontFix for RA2YR$\r$\nBy THAI RA2"
-!define MUI_WELCOMEPAGE_TEXT "It is recommended that you close all the game application before starting Setup.$\r$\n$\r$\nClick Next to continue."
-!define MUI_DIRECTORYPAGE_TEXT_TOP "Installs binkw32.dll as a proxy to binkw32.bin. Also installs game.fnt, backing up the existing font for Uninstall.$\r$\nChoose your game folder, then click Next."
+!define MUI_WELCOMEPAGE_TITLE "ThaiFontFix สำหรับ RA2YR$\r$\nโดย THAI RA2"
+!define MUI_WELCOMEPAGE_TEXT "แนะนำให้ปิดเกมทั้งหมดก่อนเริ่มติดตั้ง$\r$\n$\r$\nคลิก ถัดไป เพื่อดำเนินการต่อ"
+!define MUI_DIRECTORYPAGE_TEXT_TOP "โปรแกรมจะติดตั้ง binkw32.dll เพื่อทำงานร่วมกับ binkw32.bin และติดตั้ง game.fnt พร้อมแทนที่ cncnet.fnt ซึ่งจะถูกลบเมื่อถอนการติดตั้ง$\r$\nเลือกโฟลเดอร์เกม แล้วคลิก ถัดไป"
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryPageLeave
 !insertmacro MUI_PAGE_DIRECTORY
@@ -114,9 +122,12 @@ Page custom ActionPageCreate ActionPageLeave
 Page custom FontPageCreate FontPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 Page custom CreditsPageCreate CreditsPageLeave
-!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "Thai"
 
 Function .onInit
+  ; Always start in Thai. The installer can still use NSIS's Thai standard
+  ; page strings even when Windows itself is set to another language.
+  StrCpy $LANGUAGE 1054
   StrCpy $Action "install"
   StrCpy $FontChoice "6"
   StrCpy $ElevationAttempted "0"
@@ -292,12 +303,13 @@ Function ActionPageCreate
   ${EndIf}
   ${NSD_CreateLabel} 0 0 100% 34u "$InstallStatusText"
   Pop $0
-  ${NSD_CreateLabel} 0 38u 100% 18u "Choose what to do:"
+  !insertmacro MUI_HEADER_TEXT "เลือกการดำเนินการ" "ติดตั้งหรือถอนการติดตั้ง ThaiFontFix"
+  ${NSD_CreateLabel} 0 38u 100% 18u "เลือกสิ่งที่ต้องการทำ:"
   Pop $0
-  ${NSD_CreateRadioButton} 8u 62u 100% 18u "Install ThaiFontFix"
+  ${NSD_CreateRadioButton} 8u 62u 100% 18u "ติดตั้ง ThaiFontFix"
   Pop $InstallRadio
   ${NSD_OnClick} $InstallRadio ActionRadioClicked
-  ${NSD_CreateRadioButton} 8u 90u 100% 18u "Uninstall ThaiFontFix"
+  ${NSD_CreateRadioButton} 8u 90u 100% 18u "ถอนการติดตั้ง ThaiFontFix"
   Pop $RestoreRadio
   ${NSD_OnClick} $RestoreRadio ActionRadioClicked
   ${If} $InstallState == "inconsistent"
@@ -332,11 +344,7 @@ FunctionEnd
 
 Function UpdateActionButton
   GetDlgItem $0 $HWNDPARENT 1
-  ${If} $Action == "restore"
-    SendMessage $0 ${WM_SETTEXT} 0 "STR:Uninstall"
-  ${Else}
-    SendMessage $0 ${WM_SETTEXT} 0 "STR:Install"
-  ${EndIf}
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:ต่อไป >"
 FunctionEnd
 
 Function ActionPageLeave
@@ -353,7 +361,7 @@ Function ActionPageLeave
   ${If} $InstallState == "installed"
     ${If} $Action == "install"
       StrCmp $UpdateConfirmed "1" action_update_confirmation_done
-      MessageBox MB_ICONEXCLAMATION|MB_YESNO|MB_DEFBUTTON2 "This will overwrite the installed ThaiFontFix proxy (version $InstalledProxyDisplay) with version ${PROXY_VERSION} and install the font selected on the next page. The original Bink backup will be kept. Continue?" IDNO action_update_declined
+      MessageBox MB_ICONEXCLAMATION|MB_YESNO|MB_DEFBUTTON2 "การดำเนินการนี้จะแทนที่ ThaiFontFix รุ่น $InstalledProxyDisplay ด้วยรุ่น ${PROXY_VERSION} และติดตั้งฟอนต์ที่เลือกในหน้าถัดไป โดยจะเก็บไฟล์สำรอง Bink ต้นฉบับไว้ ดำเนินการต่อหรือไม่?" IDNO action_update_declined
       StrCpy $UpdateConfirmed "1"
 action_update_confirmation_done:
     ${EndIf}
@@ -371,7 +379,7 @@ font_page_show:
   ${If} $0 == error
     Abort
   ${EndIf}
-  !insertmacro MUI_HEADER_TEXT "Choose a game font" "Select a font and preview its Thai glyphs."
+  !insertmacro MUI_HEADER_TEXT "เลือกฟอนต์เกม" "เลือกฟอนต์และดูตัวอย่างตัวอักษรภาษาไทย"
   ${NSD_CreateFirstRadioButton} 6u 8u 108u 16u "Westwood Improved"
   Pop $FontRadio6
   ${NSD_OnClick} $FontRadio6 FontRadioClicked
@@ -415,9 +423,9 @@ font_page_show:
 
   ${NSD_CreateLabel} 122u 8u 180u 16u ""
   Pop $FontAuthorLabel
-  ${NSD_CreateLabel} 122u 26u 180u 16u "Thai glyphs Tahoma by Thai RA2 (iCharge)"
+  ${NSD_CreateLabel} 122u 26u 180u 16u "อักษรไทยใน Tahoma โดย iCharge"
   Pop $0
-  ${NSD_CreateLabel} 122u 46u 180u 16u "Rendered in the game bitmap font:"
+  ${NSD_CreateLabel} 122u 46u 180u 16u "ตัวอย่างจากฟอนต์บิตแมปในเกม:"
   Pop $0
   ${NSD_CreateBitmap} 122u 64u 180u 65u ""
   Pop $FontPreviewControl
@@ -509,7 +517,7 @@ font_details_westwood_improved:
   StrCpy $0 "${WESTWOOD_IMPROVED_FONT_AUTHOR}"
   StrCpy $1 "$PLUGINSDIR\font-preview-westwood-improved.bmp"
 font_details_show:
-  ${NSD_SetText} $FontAuthorLabel "Author: $0"
+  ${NSD_SetText} $FontAuthorLabel "ผู้สร้าง: $0"
   ${NSD_FreeImage} $FontPreviewHandle
   ${NSD_SetImage} $FontPreviewControl "$1" $FontPreviewHandle
 FunctionEnd
@@ -561,74 +569,74 @@ credits_page_show:
   ${If} $0 == error
     Abort
   ${EndIf}
-  !insertmacro MUI_HEADER_TEXT "Installation complete" "Credits and source links"
-  SendMessage $mui.Button.Next ${WM_SETTEXT} 0 "STR:Finish"
+  !insertmacro MUI_HEADER_TEXT "ติดตั้งเสร็จสิ้น" "เครดิตและแหล่งที่มา"
+  SendMessage $mui.Button.Next ${WM_SETTEXT} 0 "STR:เสร็จสิ้น"
 
-  ${NSD_CreateLabel} 6u 0u 285u 16u "Thank you for installing ThaiFontFix for Red Alert 2."
+  ${NSD_CreateLabel} 6u 0u 285u 16u "ขอบคุณที่ติดตั้ง ThaiFontFix สำหรับ Red Alert 2"
   Pop $0
-  ${NSD_CreateLabel} 6u 18u 285u 16u "Thai glyphs: THAI RA2 (iCharge); font edits: mah_boi."
+  ${NSD_CreateLabel} 6u 18u 285u 16u "อักษรไทยในทุกฟอนต์: THAI RA2 (iCharge)"
   Pop $0
-  ${NSD_CreateLabel} 6u 36u 285u 16u "Original font authors and sources:"
+  ${NSD_CreateLabel} 6u 36u 285u 16u "ผู้สร้างฟอนต์ต้นฉบับและแหล่งที่มา:"
   Pop $0
 
-  ${NSD_CreateLabel} 6u 52u 220u 12u "Tahoma 8px - WavePY"
+  ${NSD_CreateLabel} 6u 52u 220u 12u "Tahoma 8 px - WavePY"
   Pop $0
-  ${NSD_CreateLink} 232u 52u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 52u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://fontstruct.com/fontstructions/show/735108/fs_tahoma_8px"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
   ${NSD_CreateLabel} 6u 64u 220u 12u "Westwood Improved - Westwood"
   Pop $0
-  ${NSD_CreateLink} 232u 64u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 64u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://github.com/rust-alert/FontsForRedAlert2"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
   ${NSD_CreateLabel} 6u 76u 220u 12u "Boiling Point - wiktorderelf"
   Pop $0
-  ${NSD_CreateLink} 232u 76u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 76u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://discord.gg/k4SVuMm"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
   ${NSD_CreateLabel} 6u 88u 220u 12u "Final War - SMxReaver"
   Pop $0
-  ${NSD_CreateLink} 232u 88u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 88u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://www.moddb.com/mods/cncfinalwar"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
   ${NSD_CreateLabel} 6u 100u 220u 12u "Phobos Improved - Kerbiter, wiktorderelf, Uranusian"
   Pop $0
-  ${NSD_CreateLink} 232u 100u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 100u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://github.com/Phobos-developers/PhobosSupplementaries/tree/develop/ImprovedFont"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
   ${NSD_CreateLabel} 6u 112u 220u 12u "Reborn - Belonit"
   Pop $0
-  ${NSD_CreateLink} 232u 112u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 112u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://www.moddb.com/mods/cc-red-alert-2-reborn1"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
   ${NSD_CreateLabel} 6u 124u 220u 12u "Rise of the East - ayylmao"
   Pop $0
-  ${NSD_CreateLink} 232u 124u 56u 12u "Source"
+  ${NSD_CreateLink} 232u 124u 56u 12u "แหล่งที่มา"
   Pop $0
   nsDialogs::SetUserData $0 "https://www.moddb.com/mods/riseoftheeast"
   ${NSD_OnClick} $0 CreditsLinkClicked
 
-  ${NSD_CreateLink} 6u 142u 64u 12u "THAI RA2 site"
+  ${NSD_CreateLink} 6u 142u 72u 12u "เว็บ THAI RA2"
   Pop $0
   nsDialogs::SetUserData $0 "https://thaira2.com"
   ${NSD_OnClick} $0 CreditsLinkClicked
-  ${NSD_CreateLink} 84u 142u 78u 12u "Font collection"
+  ${NSD_CreateLink} 84u 142u 90u 12u "FontsForRedAlert2"
   Pop $0
   nsDialogs::SetUserData $0 "https://github.com/rust-alert/FontsForRedAlert2"
   ${NSD_OnClick} $0 CreditsLinkClicked
-  ${NSD_CreateLink} 176u 142u 100u 12u "CC BY-NC 4.0 license"
+  ${NSD_CreateLink} 180u 142u 100u 12u "สัญญาอนุญาต CC BY-NC 4.0"
   Pop $0
   nsDialogs::SetUserData $0 "https://creativecommons.org/licenses/by-nc/4.0/"
   ${NSD_OnClick} $0 CreditsLinkClicked
@@ -655,7 +663,7 @@ FunctionEnd
 Function DirectoryPageLeave
   Call IsGameDirectory
   StrCmp $R9 "1" dir_leave_ok
-  MessageBox MB_ICONEXCLAMATION|MB_OK "Select the game folder containing RA2.exe, game.exe, ra2.mix, and language.mix."
+  MessageBox MB_ICONEXCLAMATION|MB_OK "เลือกโฟลเดอร์เกมที่มีไฟล์ RA2.exe, game.exe, ra2.mix และ language.mix อยู่ด้วยกัน"
   Abort
 dir_leave_ok:
   Call DetectInstallState
@@ -690,7 +698,7 @@ detect_proxy_version_ready:
   StrCmp $ActionOverride "restore" 0 detect_proxy_show_version
   StrCpy $Action "restore"
 detect_proxy_show_version:
-  StrCpy $InstallStatusText "Installed: $InstalledProxyDisplay  |  Setup: ${PROXY_VERSION}$\r$\nChoose Install to change the selected font or update ThaiFontFix, or choose Uninstall to restore the originals."
+  StrCpy $InstallStatusText "ติดตั้งแล้ว: $InstalledProxyDisplay  |  เวอร์ชันนี้: ${PROXY_VERSION}$\r$\nเลือก ติดตั้ง เพื่อเปลี่ยนฟอนต์หรืออัปเดต ThaiFontFix หรือเลือก ถอนการติดตั้ง เพื่อคืนค่าไฟล์เดิม"
   Return
 detect_proxy_version_unknown:
   StrCpy $InstallState "installed"
@@ -698,13 +706,13 @@ detect_proxy_version_unknown:
   StrCmp $ActionOverride "restore" 0 detect_proxy_show_unknown_version
   StrCpy $Action "restore"
 detect_proxy_show_unknown_version:
-  StrCpy $InstallStatusText "Installed: Unknown  |  Setup: ${PROXY_VERSION}$\r$\nChoose Install to change the selected font or update ThaiFontFix, or choose Uninstall to restore the originals."
+  StrCpy $InstallStatusText "ติดตั้งแล้ว: ไม่ทราบเวอร์ชัน  |  เวอร์ชันนี้: ${PROXY_VERSION}$\r$\nเลือก ติดตั้ง เพื่อเปลี่ยนฟอนต์หรืออัปเดต ThaiFontFix หรือเลือก ถอนการติดตั้ง เพื่อคืนค่าไฟล์เดิม"
   Return
 
 detect_proxy_backup_problem:
   StrCpy $InstallState "inconsistent"
   StrCpy $Action ""
-  StrCpy $InstallStatusText "ThaiFontFix proxy found, but exactly one original Bink backup is required. Review the game folder before continuing."
+  StrCpy $InstallStatusText "พบไฟล์พร็อกซี ThaiFontFix แต่ต้องมีไฟล์สำรอง Bink ต้นฉบับเพียงหนึ่งไฟล์ โปรดตรวจสอบโฟลเดอร์เกมก่อนดำเนินการต่อ"
   Return
 
 detect_proxy_absent:
@@ -713,18 +721,22 @@ detect_proxy_absent:
   IfFileExists "$INSTDIR\${FONT_ADDED_MARKER}" detect_font_recovery
   IfFileExists "$INSTDIR\${FONT_STAGE}" detect_font_recovery
   IfFileExists "$INSTDIR\${FONT_REMOVE_STAGE}" detect_font_recovery
+  IfFileExists "$INSTDIR\${CNCNET_FONT_BACKUP}" detect_font_recovery
+  IfFileExists "$INSTDIR\${CNCNET_FONT_ADDED_MARKER}" detect_font_recovery
+  IfFileExists "$INSTDIR\${CNCNET_FONT_STAGE}" detect_font_recovery
+  IfFileExists "$INSTDIR\${CNCNET_FONT_REMOVE_STAGE}" detect_font_recovery
   IfFileExists "$INSTDIR\${REMOVE_STAGE}" detect_font_recovery
   IfFileExists "$INSTDIR\${UPDATE_STAGE}" detect_inconsistent_backup
   IfFileExists "$INSTDIR\${PROXY_NAME}" 0 detect_missing_bink
   StrCpy $InstallState "not_installed"
   StrCpy $Action "install"
-  StrCpy $InstallStatusText "ThaiFontFix is not installed. Install is selected."
+  StrCpy $InstallStatusText "ยังไม่ได้ติดตั้ง ThaiFontFix เลือกการติดตั้งไว้แล้ว"
   Return
 
 detect_font_recovery:
   StrCpy $InstallState "interrupted_restore"
   StrCpy $Action "restore"
-  StrCpy $InstallStatusText "A previous setup stopped partway through. Uninstall is selected to restore the game safely."
+  StrCpy $InstallStatusText "การติดตั้งครั้งก่อนหยุดกลางคัน เลือกการถอนการติดตั้งไว้เพื่อคืนค่าเกมอย่างปลอดภัย"
   Return
 
 detect_backup_without_proxy:
@@ -737,7 +749,7 @@ detect_backup_without_proxy:
   StrCmp $0 "1" 0 detect_inconsistent_backup
   StrCpy $InstallState "interrupted_restore"
   StrCpy $Action "restore"
-  StrCpy $InstallStatusText "A previous uninstall stopped partway through. Uninstall is selected to finish it safely."
+  StrCpy $InstallStatusText "การถอนการติดตั้งครั้งก่อนหยุดกลางคัน เลือกการถอนการติดตั้งไว้เพื่อดำเนินการให้เสร็จอย่างปลอดภัย"
   Return
 
 detect_interrupted_update:
@@ -747,19 +759,19 @@ detect_interrupted_update:
   StrCmp $0 "1" 0 detect_inconsistent_backup
   StrCpy $InstallState "interrupted_restore"
   StrCpy $Action "restore"
-  StrCpy $InstallStatusText "A previous update stopped partway through. Uninstall is selected to restore the game safely."
+  StrCpy $InstallStatusText "การอัปเดตครั้งก่อนหยุดกลางคัน เลือกการถอนการติดตั้งไว้เพื่อคืนค่าเกมอย่างปลอดภัย"
   Return
 
 detect_inconsistent_backup:
   StrCpy $InstallState "inconsistent"
   StrCpy $Action ""
-  StrCpy $InstallStatusText "A Bink backup exists without the ThaiFontFix proxy. Review the game folder before continuing."
+  StrCpy $InstallStatusText "พบไฟล์สำรอง Bink แต่ไม่พบพร็อกซี ThaiFontFix โปรดตรวจสอบโฟลเดอร์เกมก่อนดำเนินการต่อ"
   Return
 
 detect_missing_bink:
   StrCpy $InstallState "inconsistent"
   StrCpy $Action ""
-  StrCpy $InstallStatusText "No binkw32.dll was found in this game folder. Select the correct folder before continuing."
+  StrCpy $InstallStatusText "ไม่พบ binkw32.dll ในโฟลเดอร์เกมนี้ โปรดเลือกโฟลเดอร์ที่ถูกต้องก่อนดำเนินการต่อ"
 FunctionEnd
 
 Function EnsureWritableGameDirectory
@@ -1011,7 +1023,7 @@ Function EnsureNoGameProcess
   StrCmp $ProcessName "" process_check_ok
 process_blocked:
   StrCmp $FailureMessage "" 0 process_error_message
-  StrCpy $FailureMessage "Close the game and Syringe before installing or restoring. Still running: $ProcessName"
+  StrCpy $FailureMessage "โปรดปิดเกมและ Syringe ก่อนติดตั้งหรือคืนค่า โปรแกรมที่ยังทำงานอยู่: $ProcessName"
 process_error_message:
   MessageBox MB_ICONEXCLAMATION|MB_OK "$FailureMessage"
   Abort
@@ -1036,6 +1048,7 @@ Section "ThaiFontFix"
   File /oname=${FONT_PACK_LICENSE_NAME} "${FONT_LICENSE_FILE}"
   StrCpy $FontOriginalMissing "0"
   StrCpy $FontInstalled "0"
+  StrCpy $CncNetFontInstalled "0"
   StrCpy $FailureMessage ""
   Call IsGameDirectory
   StrCmp $R9 "1" 0 invalid_game_dir
@@ -1043,14 +1056,14 @@ Section "ThaiFontFix"
   StrCmp $Action "restore" do_restore do_install
 
 invalid_game_dir:
-  MessageBox MB_ICONEXCLAMATION|MB_OK "The selected folder must contain RA2.exe, game.exe, ra2.mix, and language.mix together."
+  MessageBox MB_ICONEXCLAMATION|MB_OK "โฟลเดอร์ที่เลือกต้องมีไฟล์ RA2.exe, game.exe, ra2.mix และ language.mix อยู่ด้วยกัน"
   Abort
 
 do_install:
   Call InstallProxy
   Call CopyFontAttributionDocs
   StrCmp $R9 "1" install_attribution_ready
-  StrCpy $AttributionWarning "The font license and credits could not be copied to the game folder. They are still included in this setup."
+  StrCpy $AttributionWarning "ไม่สามารถคัดลอกใบอนุญาตและเครดิตฟอนต์ไปยังโฟลเดอร์เกมได้ แต่ยังมีไฟล์เหล่านี้อยู่ในตัวติดตั้ง"
 install_attribution_ready:
   StrCmp $InstallState "installed" install_updated_successfully
   IfFileExists "$INSTDIR\${README_NAME}" install_readme_complete
@@ -1067,17 +1080,15 @@ install_update_message:
   StrCmp $AttributionWarning "" install_update_success_message
   MessageBox MB_ICONEXCLAMATION|MB_OK "$AttributionWarning"
 install_update_success_message:
-  MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix was updated successfully with $SelectedFontName."
   Goto section_complete
 
 install_readme_failed:
-  MessageBox MB_ICONEXCLAMATION|MB_OK "ThaiFontFix was installed, but its readme could not be copied to the game folder."
+  MessageBox MB_ICONEXCLAMATION|MB_OK "ติดตั้ง ThaiFontFix แล้ว แต่ไม่สามารถคัดลอกไฟล์ readme ไปยังโฟลเดอร์เกมได้"
   Goto install_success_message
 install_success_message:
   StrCmp $AttributionWarning "" install_success_popup
   MessageBox MB_ICONEXCLAMATION|MB_OK "$AttributionWarning"
 install_success_popup:
-  MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix was installed successfully with $SelectedFontName."
   Goto section_complete
 
 do_restore:
@@ -1090,13 +1101,21 @@ Function InstallProxy
 install_update_existing:
   Call UpdateInstalledProxy
   Call UpdateSelectedFont
-  StrCmp $R9 "1" update_font_done
+  StrCmp $R9 "1" update_game_font_done
   StrCmp $UpdateCleanupWarning "" update_font_first_warning
-  StrCpy $UpdateCleanupWarning "$UpdateCleanupWarning$\r$\nThe game font was not changed: $FailureMessage"
-  Goto update_font_done
+  StrCpy $UpdateCleanupWarning "$UpdateCleanupWarning$\r$\nไม่ได้เปลี่ยนฟอนต์เกม: $FailureMessage"
+  Goto update_game_font_done
 update_font_first_warning:
-  StrCpy $UpdateCleanupWarning "The proxy was updated, but the game font was not changed: $FailureMessage"
-update_font_done:
+  StrCpy $UpdateCleanupWarning "อัปเดตพร็อกซีแล้ว แต่ไม่ได้เปลี่ยนฟอนต์เกม: $FailureMessage"
+update_game_font_done:
+  Call UpdateSelectedCncNetFont
+  StrCmp $R9 "1" update_cncnet_font_done
+  StrCmp $UpdateCleanupWarning "" update_cncnet_font_first_warning
+  StrCpy $UpdateCleanupWarning "$UpdateCleanupWarning$\r$\nไม่ได้เปลี่ยน cncnet.fnt: $FailureMessage"
+  Goto update_cncnet_font_done
+update_cncnet_font_first_warning:
+  StrCpy $UpdateCleanupWarning "อัปเดตพร็อกซีแล้ว แต่ไม่ได้เปลี่ยน cncnet.fnt: $FailureMessage"
+update_cncnet_font_done:
   Return
 install_new_proxy:
   Push "$INSTDIR\${PROXY_NAME}"
@@ -1164,6 +1183,8 @@ install_stage_proxy:
   System::Call 'kernel32::FreeLibrary(p R0) i .r0'
 
   Call InstallSelectedFont
+  StrCmp $R9 "1" 0 install_font_failed
+  Call InstallSelectedCncNetFont
   StrCmp $R9 "1" 0 install_font_failed
 
   ClearErrors
@@ -1239,7 +1260,7 @@ install_config_move_failed:
   Rename "$INSTDIR\${BACKUP_NAME}" "$INSTDIR\${PROXY_NAME}"
   StrCpy $FailureMessage "Could not create the default INI. The original DLL was restored."
 install_failure:
-  Call RollbackSelectedFont
+  Call RollbackSelectedFonts
   Delete "$INSTDIR\${PROXY_STAGE}"
   Delete "$INSTDIR\${CONFIG_STAGE}"
   MessageBox MB_ICONSTOP|MB_OK "$FailureMessage"
@@ -1431,10 +1452,14 @@ restore_font_only:
   IfFileExists "$INSTDIR\${FONT_ADDED_MARKER}" restore_font_only_found
   IfFileExists "$INSTDIR\${FONT_STAGE}" restore_font_only_found
   IfFileExists "$INSTDIR\${FONT_REMOVE_STAGE}" restore_font_only_found
+  IfFileExists "$INSTDIR\${CNCNET_FONT_BACKUP}" restore_font_only_found
+  IfFileExists "$INSTDIR\${CNCNET_FONT_ADDED_MARKER}" restore_font_only_found
+  IfFileExists "$INSTDIR\${CNCNET_FONT_STAGE}" restore_font_only_found
+  IfFileExists "$INSTDIR\${CNCNET_FONT_REMOVE_STAGE}" restore_font_only_found
   Goto restore_not_proxy
 restore_font_only_found:
   Call EnsureWritableGameDirectory
-  Call RestoreSelectedFont
+  Call RestoreSelectedFonts
   StrCmp $R9 "1" 0 restore_font_failed
   MessageBox MB_ICONINFORMATION|MB_OK "ThaiFontFix font files were restored successfully."
   Return
@@ -1451,7 +1476,7 @@ restore_completed_bink_stage:
   System::Call 'kernel32::FreeLibrary(p R0) i .r1'
   StrCmp $0 "1" restore_completed_original_invalid
   Call EnsureWritableGameDirectory
-  Call RestoreSelectedFont
+  Call RestoreSelectedFonts
   StrCmp $R9 "1" 0 restore_font_failed
   Call RemoveUpdateStage
   StrCmp $R9 "1" 0 restore_update_stage_cleanup_failed
@@ -1479,7 +1504,7 @@ restore_validate_backup:
   System::Call 'kernel32::FreeLibrary(p R0) i .r0'
 
   Call EnsureWritableGameDirectory
-  Call RestoreSelectedFont
+  Call RestoreSelectedFonts
   StrCmp $R9 "1" 0 restore_font_failed
   Call RemoveUpdateStage
   StrCmp $R9 "1" 0 restore_update_stage_cleanup_failed
@@ -1557,7 +1582,7 @@ restore_validation_failed:
   StrCpy $FailureMessage "The restored file failed validation. The proxy was put back."
   Goto restore_failure
 restore_font_failed:
-  ; RestoreSelectedFont has already set a specific, recoverable error message.
+  ; RestoreSelectedFonts has already set a specific, recoverable error message.
   Goto restore_failure
 restore_failure:
   MessageBox MB_ICONSTOP|MB_OK "$FailureMessage"
@@ -1864,6 +1889,106 @@ restore_font_original_failed:
   Return
 restore_font_delete_failed:
   StrCpy $FailureMessage "Could not remove a ThaiFontFix font file. Check folder permissions and try Uninstall again."
+FunctionEnd
+
+Function InstallSelectedCncNetFont
+  StrCpy $CncNetFontInstalled "0"
+  Call ReplaceSelectedCncNetFont
+FunctionEnd
+
+Function UpdateSelectedCncNetFont
+  StrCpy $CncNetFontInstalled "0"
+  Call ReplaceSelectedCncNetFont
+FunctionEnd
+
+Function ReplaceSelectedCncNetFont
+  StrCpy $R9 "0"
+  IfFileExists "$SelectedFontPath" cncnet_font_source_ready
+  StrCpy $FailureMessage "The selected packaged game font is missing. The existing cncnet.fnt was left unchanged."
+  Return
+
+cncnet_font_source_ready:
+  IfFileExists "$INSTDIR\${CNCNET_FONT_STAGE}" cncnet_font_stage_conflict
+  IfFileExists "$INSTDIR\${CNCNET_FONT_REMOVE_STAGE}" cncnet_font_stage_conflict
+  IfFileExists "$INSTDIR\${CNCNET_FONT_NAME}" cncnet_font_check_existing cncnet_font_copy_stage
+cncnet_font_check_existing:
+  System::Call 'kernel32::GetFileAttributesW(w "$INSTDIR\${CNCNET_FONT_NAME}") i .r0'
+  IntOp $0 $0 & 0x10
+  StrCmp $0 0 cncnet_font_copy_stage cncnet_font_is_directory
+
+cncnet_font_copy_stage:
+  ClearErrors
+  CopyFiles /SILENT "$SelectedFontPath" "$INSTDIR\${CNCNET_FONT_STAGE}"
+  IfErrors cncnet_font_copy_failed
+  ; CopyFiles to an explicit file path overwrites cncnet.fnt in place.
+  ClearErrors
+  CopyFiles /SILENT "$INSTDIR\${CNCNET_FONT_STAGE}" "$INSTDIR\${CNCNET_FONT_NAME}"
+  IfErrors cncnet_font_replace_failed
+  Delete "$INSTDIR\${CNCNET_FONT_STAGE}"
+  Delete "$INSTDIR\${CNCNET_FONT_BACKUP}"
+  Delete "$INSTDIR\${CNCNET_FONT_ADDED_MARKER}"
+  StrCpy $CncNetFontInstalled "1"
+  StrCpy $R9 "1"
+  Return
+
+cncnet_font_is_directory:
+  StrCpy $FailureMessage "cncnet.fnt is a folder. Rename it before installing ThaiFontFix."
+  Return
+cncnet_font_stage_conflict:
+  StrCpy $FailureMessage "A temporary cncnet.fnt file exists. Choose Uninstall to clean up the previous setup before trying again."
+  Return
+cncnet_font_copy_failed:
+  StrCpy $FailureMessage "The installer could not stage the selected cncnet.fnt. Check folder permissions and free space."
+  Return
+cncnet_font_replace_failed:
+  Delete "$INSTDIR\${CNCNET_FONT_STAGE}"
+  StrCpy $FailureMessage "Could not replace cncnet.fnt. Check folder permissions and free space."
+FunctionEnd
+
+Function RollbackSelectedCncNetFont
+  StrCmp $CncNetFontInstalled "1" 0 rollback_cncnet_font_done
+  Delete "$INSTDIR\${CNCNET_FONT_NAME}"
+  Delete "$INSTDIR\${CNCNET_FONT_STAGE}"
+  Delete "$INSTDIR\${CNCNET_FONT_REMOVE_STAGE}"
+  Delete "$INSTDIR\${CNCNET_FONT_BACKUP}"
+  Delete "$INSTDIR\${CNCNET_FONT_ADDED_MARKER}"
+  StrCpy $CncNetFontInstalled "0"
+rollback_cncnet_font_done:
+FunctionEnd
+
+Function RestoreSelectedCncNetFont
+  StrCpy $R9 "0"
+  ; CnCNet's font is deliberately replaced on install and removed on
+  ; uninstall. Also clean the backup names left by older installer versions.
+  Delete "$INSTDIR\${CNCNET_FONT_NAME}"
+  IfFileExists "$INSTDIR\${CNCNET_FONT_NAME}" restore_cncnet_font_delete_failed
+  Delete "$INSTDIR\${CNCNET_FONT_BACKUP}"
+  IfFileExists "$INSTDIR\${CNCNET_FONT_BACKUP}" restore_cncnet_font_delete_failed
+  Delete "$INSTDIR\${CNCNET_FONT_ADDED_MARKER}"
+  IfFileExists "$INSTDIR\${CNCNET_FONT_ADDED_MARKER}" restore_cncnet_font_delete_failed
+  Delete "$INSTDIR\${CNCNET_FONT_STAGE}"
+  IfFileExists "$INSTDIR\${CNCNET_FONT_STAGE}" restore_cncnet_font_delete_failed
+  Delete "$INSTDIR\${CNCNET_FONT_REMOVE_STAGE}"
+  IfFileExists "$INSTDIR\${CNCNET_FONT_REMOVE_STAGE}" restore_cncnet_font_delete_failed
+  StrCpy $R9 "1"
+  Return
+restore_cncnet_font_delete_failed:
+  StrCpy $FailureMessage "Could not remove a ThaiFontFix CnCNet font file. Check folder permissions and try Uninstall again."
+FunctionEnd
+Function RollbackSelectedFonts
+  Call RollbackSelectedFont
+  Call RollbackSelectedCncNetFont
+FunctionEnd
+
+Function RestoreSelectedFonts
+  Call RestoreSelectedFont
+  StrCmp $R9 "1" 0 restore_both_fonts_failed
+  Call RestoreSelectedCncNetFont
+  StrCmp $R9 "1" 0 restore_both_fonts_failed
+  StrCpy $R9 "1"
+  Return
+restore_both_fonts_failed:
+  StrCpy $R9 "0"
 FunctionEnd
 
 Function RemoveUpdateStage

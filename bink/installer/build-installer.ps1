@@ -25,7 +25,9 @@ if ([string]::IsNullOrWhiteSpace($proxyVersion) -or $proxyVersion -notmatch '^\d
 $config = Join-Path $projectRoot 'thaifontfix.ini'
 $readme = Join-Path $installerDirectory 'ThaiFontFix_readme.txt'
 $defaultFont = Join-Path $installerDirectory 'assets\fonts\default\game.fnt'
+$thaiGlyphSource = Join-Path $installerDirectory 'assets\fonts\thai-glyphs\game.fnt'
 $upstreamFontsRoot = Join-Path $projectRoot 'fonts\FontsForRedAlert2\Source'
+$defaultFontSource = Join-Path $upstreamFontsRoot 'Tahoma8pxFont\game.fnt'
 $fontPackReadme = Join-Path $projectRoot 'fonts\FontsForRedAlert2\README.md'
 $fontPackLicense = Join-Path $projectRoot 'fonts\FontsForRedAlert2\LICENSE.md'
 $fontPreviewRenderer = Join-Path $installerDirectory 'render-font-preview.py'
@@ -59,6 +61,13 @@ function Assert-ThaiGameFont {
         $entry = [BitConverter]::ToUInt16($bytes, $mapOffset + $code * 2)
         if ($entry -eq 0 -or $entry -gt $count) {
             throw "Font $Path has no valid Thai CP874 glyph for byte 0x$('{0:X2}' -f $code)."
+        }
+    }
+
+    foreach ($code in @(0x231A, 0x26A1, 0x26CF, 0x26DF)) {
+        $entry = [BitConverter]::ToUInt16($bytes, $mapOffset + $code * 2)
+        if ($entry -eq 0 -or $entry -gt $count) {
+            throw "Font $Path has no valid symbol glyph mapping for U+$('{0:X4}' -f $code)."
         }
     }
 
@@ -205,12 +214,13 @@ if (-not $SkipProxyBuild) {
 if (-not (Test-Path -LiteralPath $upstreamFontsRoot -PathType Container)) {
     throw 'The FontsForRedAlert2 submodule is not checked out. Run: git submodule update --init -- fonts/FontsForRedAlert2'
 }
-foreach ($required in @($proxy, $config, $readme, $defaultFont, $definition, $script, $fontPreviewRenderer, $fontPackReadme, $fontPackLicense) + @($fontVariants | ForEach-Object Source)) {
+foreach ($required in @($proxy, $config, $readme, $thaiGlyphSource, $defaultFontSource, $definition, $script, $fontPreviewRenderer, $fontPackReadme, $fontPackLicense) + @($fontVariants | ForEach-Object Source)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required installer input is missing: $required"
     }
 }
-Assert-ThaiGameFont -Path $defaultFont
+Assert-ThaiGameFont -Path $thaiGlyphSource
+Merge-InstallerThaiGlyphs -FontSource $defaultFontSource -ThaiSource $thaiGlyphSource -Destination $defaultFont
 
 $installerSource = Get-Content -LiteralPath $script -Raw
 if ($installerSource -match '(?im)^\s*WriteUninstaller\b') {
@@ -289,7 +299,7 @@ $includeLines = @(
     '!define README_FILE "build-artifacts\package\ThaiFontFix_readme.txt"',
     '!define DEFAULT_FONT_FILE "build-artifacts\package\fonts\default\game.fnt"',
     '!define DEFAULT_FONT_PREVIEW_FILE "build-artifacts\package\previews\font-preview-default.bmp"',
-    '!define DEFAULT_FONT_AUTHOR "Thai glyphs by THAI RA2"',
+    '!define DEFAULT_FONT_AUTHOR "WavePY"',
     '!define FONT_LICENSE_FILE "build-artifacts\package\FontsForRedAlert2-LICENSE.md"',
     '!define FONT_PACK_README_FILE "build-artifacts\package\FontsForRedAlert2-README.md"'
 )
@@ -312,6 +322,7 @@ if ([string]::IsNullOrWhiteSpace($NsisPath)) {
         $candidates = @(
             (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
             (Join-Path $env:ProgramFiles 'NSIS\makensis.exe'),
+            (Join-Path $buildRoot 'nsis-3.13-rebuilt\nsis-3.13\Bin\makensis.exe'),
             (Join-Path $buildRoot 'nsis-3.13\nsis-3.13\Bin\makensis.exe'),
             (Join-Path $buildRoot 'nsis-3.13\nsis-3.13\makensis.exe')
         ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
